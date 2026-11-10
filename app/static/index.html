@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Runs · Experiment Tracker</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body data-page="index">
+  <header class="top">
+    <h1>Experiment Tracker</h1>
+    <button id="logout" class="link" hidden>Forget key</button>
+  </header>
+
+  <main>
+    <section id="login-section" hidden>
+      <h2>Enter your project API key</h2>
+      <form id="login-form">
+        <input id="key-input" type="password" name="key" placeholder="sk_…" autocomplete="off" required>
+        <button type="submit">Open project</button>
+      </form>
+      <p class="hint">The key stays in this tab only (sessionStorage) and is sent only to this server.</p>
+      <p id="login-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="runs-section" hidden>
+      <div class="row">
+        <h2>Runs</h2>
+        <form id="new-run-form">
+          <input id="new-run-name" type="text" maxlength="200" placeholder="New run name" required>
+          <button type="submit">Create run</button>
+        </form>
+      </div>
+      <p id="runs-error" class="error" role="alert" hidden></p>
+      <table id="runs-table">
+        <thead>
+          <tr><th>Name</th><th>Created</th><th class="num">Points</th><th class="num">last_seq</th></tr>
+        </thead>
+        <tbody id="runs-body"></tbody>
+      </table>
+      <p id="runs-empty" class="hint" hidden>No runs yet. Create one above, or POST /runs with your key.</p>
+    </section>
+  </main>
+</body>
+</html>

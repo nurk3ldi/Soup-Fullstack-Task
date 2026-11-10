@@ -1,0 +1,56 @@
+date: 2026-11-10T19:58:40Z
+host: 8 cpus, 7.5 GiB RAM; load generator, api and db all on this one machine
+api: uvicorn workers=4, db pool max per worker=10
+
+--- docker stats, idle, before batch=10
+soup-api-1	cpu 0.93%	mem 177.1MiB / 7.531GiB
+soup-db-1	cpu 7.20%	mem 170.5MiB / 7.531GiB
+--- docker stats, batch=10, about 1/3 into the run
+soup-api-1	cpu 25.22%	mem 180.2MiB / 7.531GiB
+soup-db-1	cpu 22.12%	mem 209.6MiB / 7.531GiB
+soup-tests-run-aec0264cbc60	cpu 6.56%	mem 33.81MiB / 7.531GiB
+--- docker stats, batch=10, about 2/3 into the run
+soup-api-1	cpu 26.16%	mem 180.1MiB / 7.531GiB
+soup-db-1	cpu 28.11%	mem 210.5MiB / 7.531GiB
+soup-tests-run-aec0264cbc60	cpu 6.75%	mem 35.51MiB / 7.531GiB
+=== load: 50 runs x 10 events/s, batch size 10, 60 s, 50 SSE subscribers; target 50 req/s, 500 points/s
+target api           : http://api:8000
+send phase           : 60.0 s; achieved 50.0 req/s, 500.0 points/s
+ingest service time  : p50 8.5 ms, p95 10.0 ms, p99 11.5 ms, max 73.6 ms (n=3000)
+ingest from schedule : p50 9.8 ms, p95 11.6 ms, p99 13.3 ms, max 75.0 ms (n=3000)
+generator lateness   : p50 1.0 ms, p95 2.0 ms, p99 2.2 ms, max 2.4 ms (n=3000)
+errors               : 0 ; retries 0; batches given up 0; acks that were duplicate:true 0
+points               : scheduled 30000, acknowledged 30000, in DB 30000 (sum of last_seq 30000), received over SSE 30000
+sse end-to-end lag   : p50 9.5 ms, p95 11.1 ms, p99 13.0 ms, max 75.6 ms (n=30000)
+sse integrity        : seq gaps 0, seq repeats 0, reconnects 0; drain after last send 0.1 s
+consistency          : {'lost_between_ack_and_db': 0, 'lost_between_db_and_sse': 0}
+cpu over the whole run (cgroup counters, 66 s incl. setup and drain; 100 % = one core): api 27.5 %, db 24.1 %
+peak memory since container start: api 195 MiB, db 434 MiB
+cpu seconds per api process since container start (shows how evenly workers shared the load): 1 7 7 0 3 7 0 
+
+--- docker stats, idle, before batch=1
+soup-api-1	cpu 0.99%	mem 179.6MiB / 7.531GiB
+soup-db-1	cpu 7.25%	mem 210.3MiB / 7.531GiB
+--- docker stats, batch=1, about 1/3 into the run
+soup-api-1	cpu 238.66%	mem 183MiB / 7.531GiB
+soup-db-1	cpu 237.01%	mem 300.9MiB / 7.531GiB
+soup-tests-run-ce617cd28c36	cpu 54.52%	mem 41.98MiB / 7.531GiB
+--- docker stats, batch=1, about 2/3 into the run
+soup-api-1	cpu 249.82%	mem 195.8MiB / 7.531GiB
+soup-db-1	cpu 187.25%	mem 303MiB / 7.531GiB
+soup-tests-run-ce617cd28c36	cpu 46.64%	mem 55.51MiB / 7.531GiB
+=== load: 50 runs x 10 events/s, batch size 1, 60 s, 50 SSE subscribers; target 500 req/s, 500 points/s
+target api           : http://api:8000
+send phase           : 72.5 s; achieved 413.9 req/s, 413.9 points/s
+ingest service time  : p50 74.1 ms, p95 186.0 ms, p99 253.3 ms, max 449.1 ms (n=30000)
+ingest from schedule : p50 164.2 ms, p95 16980.3 ms, p99 18112.9 ms, max 19070.0 ms (n=30000)
+generator lateness   : p50 0.7 ms, p95 2.1 ms, p99 4.4 ms, max 120.6 ms (n=30000)
+errors               : 0 ; retries 0; batches given up 0; acks that were duplicate:true 0
+points               : scheduled 30000, acknowledged 30000, in DB 30000 (sum of last_seq 30000), received over SSE 30000
+sse end-to-end lag   : p50 90.9 ms, p95 221.6 ms, p99 293.0 ms, max 506.1 ms (n=30000)
+sse integrity        : seq gaps 0, seq repeats 0, reconnects 0; drain after last send 0.1 s
+consistency          : {'lost_between_ack_and_db': 0, 'lost_between_db_and_sse': 0}
+cpu over the whole run (cgroup counters, 79 s incl. setup and drain; 100 % = one core): api 190.5 %, db 188.0 %
+peak memory since container start: api 202 MiB, db 530 MiB
+cpu seconds per api process since container start (shows how evenly workers shared the load): 1 36 35 0 0 42 61 
+

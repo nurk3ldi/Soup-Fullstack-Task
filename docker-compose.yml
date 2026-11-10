@@ -1,0 +1,93 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tracker
+      POSTGRES_PASSWORD: tracker
+      POSTGRES_DB: tracker
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracker -d tracker"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Port intentionally not published: only the api and tests containers need the database.
+
+  api:
+    build:
+      context: .
+      target: app
+    environment:
+      DATABASE_URL: postgresql://tracker:tracker@db:5432/tracker
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      TEST_MODE: "0"
+      # Scaling knobs (defaults = what the tests and results/load.txt were run with).
+      # More than one worker REQUIRES a STREAM_SECRET, or stream tokens minted by one worker are
+      # rejected by the others.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      STREAM_SECRET: ${STREAM_SECRET:-}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
+      # Each check starts a Python interpreter (~0.1 s of CPU). Every 2 s that showed up as
+      # 10-40 % CPU in `docker stats` on an idle container, so: fast only while starting.
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+
+  # Same image and database as `api`, but with the test-only hooks enabled (fault injection,
+  # debug endpoints). Only started for the test suite; never published to the host.
+  api-test:
+    profiles: ["tests"]
+    build:
+      context: .
+      target: app
+    environment:
+      DATABASE_URL: postgresql://tracker:tracker@db:5432/tracker
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      TEST_MODE: "1"
+      SSE_STALL_SECONDS: "2"   # production default is 10; shortened so the overflow test is quick
+      SSE_PING_SECONDS: "1"    # production default is 15; shortened so stale-connection tests are quick
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
+      # Each check starts a Python interpreter (~0.1 s of CPU). Every 2 s that showed up as
+      # 10-40 % CPU in `docker stats` on an idle container, so: fast only while starting.
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+
+  tests:
+    profiles: ["tests"]
+    build:
+      context: .
+      target: tests
+    environment:
+      API_URL: http://api-test:8000          # TEST_MODE=1
+      PLAIN_API_URL: http://api:8000         # TEST_MODE off, to prove the hooks are inert there
+      DATABASE_URL: postgresql://tracker:tracker@db:5432/tracker
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+    depends_on:
+      api:
+        condition: service_healthy
+      api-test:
+        condition: service_healthy
+    volumes:
+      - ./tests:/srv/tests
+      - ./loadtest:/srv/loadtest
+      - ./results:/srv/results
+
+volumes:
+  pgdata:

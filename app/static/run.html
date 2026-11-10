@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Run · Experiment Tracker</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body data-page="run">
+  <header class="top">
+    <h1><a href="/">Experiment Tracker</a></h1>
+  </header>
+
+  <main>
+    <div class="row">
+      <h2 id="run-name">Run</h2>
+      <span id="status" class="badge" data-status="connecting">connecting</span>
+    </div>
+    <dl class="stats">
+      <div><dt>last_seq</dt><dd id="last-seq">0</dd></div>
+      <div><dt>Points</dt><dd id="total">0</dd></div>
+      <div><dt>Metrics</dt><dd id="metric-count">0</dd></div>
+      <div><dt>Reconnects</dt><dd id="reconnects">0</dd></div>
+    </dl>
+    <p id="message" class="error" role="alert" hidden></p>
+    <p id="empty" class="hint">Waiting for the first points…</p>
+    <div id="metrics"></div>
+  </main>
+</body>
+</html>
