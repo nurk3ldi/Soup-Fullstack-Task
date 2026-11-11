@@ -163,3 +163,11 @@ Asked for by the author after the security review listed it as the first open it
 | Default of 600 requests/s per project, chosen to sit above the assignment's own workload (500 requests/s with batch size 1), so the load test still measures the server and not the limiter. It is above what one process can serve, which SECURITY.md says plainly. | pending review | load test rerun with the limiter on: 0 errors (`results/load.txt`) |
 | Limiters are switched off on the test service by environment and switched on per test through a TEST_MODE hook; a separate test checks that the normal service has them on by default. | pending review | `…plain_service_limits_failed_credentials_without_any_hook`: 40 bad keys → 20 × 401, 20 × 429 |
 | Not done: shared state across workers (would need Redis or a proxy), limits on unauthenticated endpoints, trusting `X-Forwarded-For`. | — | SECURITY.md, open item 1 |
+
+## UI restyle (2026-11-11)
+
+Asked for by the author ("make the design nicer") after everything else was done.
+
+| Suggestion by AI | Status | Verified how |
+|---|---|---|
+| Rewrite `app/static/style.css` only: metric cards in a grid, status badge with a dot, light and dark palettes, login as a card. HTML, JS and every selector the tests use are unchanged; no external fonts or images (the CSP forbids them); no `text-transform`, because tests read text off the page. | pending review | full suite rerun on the new stylesheet: 106 passed; screenshots regenerated in `results/screens/` |

@@ -324,6 +324,10 @@ Update the checkboxes and the "State notes" below at the end of every working se
   (p99 11.0 ms), batch=1 316.2 req/s, 0 errors. Five single runs of batch=1 over two days:
   309.8, 277, 281, 256.4, 316.2: the spread is the machine, not the code. Do not read a
   10 % difference between two single runs as a regression. `load_workers4.txt` is old code.
+- 2026-11-11 (evening): UI restyle, CSS only (`app/static/style.css`); HTML, JS and test
+  selectors untouched. Suite rerun on it: 106 passed; `results/test_output.txt` was kept at the
+  committed run because NOTE.md quotes it. Screenshots regenerated. Keep the stylesheet free of
+  `text-transform` (tests read text off the page) and of external assets (CSP).
 - Project skills: 10 third-party skills in `.claude/skills/` (git-ignored; source and commit in
   AI_USAGE.md). They are generic checklists. Do not run their `scripts/` (not installed, not
   reviewed) and do not install the other 808.
