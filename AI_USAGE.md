@@ -127,3 +127,27 @@ Status is one of: accepted / changed / rejected / pending review.
 | Maximum stream lifetime (`SSE_MAX_LIFETIME_SECONDS`, default 300, +-10 % jitter) so that a dead client the server cannot detect is released; live clients resume from their cursor. | accepted | silent-stall E2E: `server_streams=1->1` (was `1->2`); never-reading client with 3 points released after 2.1 s with 0 overflow drops; new `max-lifetime` E2E scenario: 3 reconnects, 500 = 500 = 500 = 500 |
 | Leave batch=1 at 500 req/s unfixed and report it as measured. | accepted | `results/load.txt` |
 | README.md, DESIGN.md and NOTE.md drafted by AI from the measured output. Verdict and the surprises paragraph are left as TODO for the author. | pending review | numbers copied from `results/test_output.txt` and `results/load.txt` |
+
+## Security review (2026-11-11)
+
+**Third-party skills.** At the author's request, AI installed skills from
+`https://github.com/mukul975/Anthropic-Cybersecurity-Skills` (commit `54a7988`, Apache-2.0; a
+community project, not published by Anthropic despite the name). The repository has 818
+skills; AI read and installed 10 that apply to this project, into `.claude/skills/` (not
+committed): OWASP API Top 10 testing, BOLA testing, API authentication weaknesses, API key
+controls, rate limiting, security headers audit, Docker hardening, gitleaks, Trivy, CORS
+testing. Only `SKILL.md`, `references/` and `LICENSE` were copied; the bundled `scripts/` were
+left out unreviewed and never run. The author's suggested installer (`npx skills add`, all 818
+skills) was not used. The skills are generic checklists; they supplied the list of things to
+check, not the findings.
+
+| Suggestion by AI | Status | Verified how |
+|---|---|---|
+| Run the API as an unprivileged user with a read-only filesystem, no capabilities, `no-new-privileges`, process and memory limits. | pending review | `results/security/baseline.txt` vs `after.txt`; test reads uid and writability from the running service |
+| Publish the port on `127.0.0.1` only and warn at startup while the default admin token is in use, instead of removing the defaults (which would break `docker compose up`). | pending review | `after.txt` |
+| Request body limit of 2 MiB, enforced only when the application asks for the body, so a caller without a key still gets 401 and nothing is read. | pending review | 413 for declared and chunked bodies; the 10 MB request went from 349 ms (422) to 10 ms (413) |
+| Cap of 100 open streams per project, checked and counted with no await in between. | pending review | 10 open + 5 racing extra on the test service: all 5 refused with 429 |
+| Security headers on every response, `Server` header removed. | pending review | 26 responses on two services plus the stream |
+| Exact dependency versions; Debian security updates applied at image build. | pending review | pip-audit: no known vulnerabilities; Trivy: 49 → 47 HIGH, 0 fixable left, 0 CRITICAL |
+| **Not done, said so in SECURITY.md:** rate limiting (belongs in a proxy; an in-process limiter does not hold across workers), TLS, distroless base image, key expiry and scopes, pagination of the run list. | — | — |
+| **Mistakes by AI in this pass, caught before commit:** (1) the first "default rules" gitleaks run used an empty config and reported 0 findings; rerun correctly it reports 1 (the dev admin token in the README). (2) A new test asserted `accepted == 1` for a 1000-point batch; the test was wrong and was corrected. (3) A Trivy command that mounted the Docker socket into a third-party container was blocked by the tool's safety check; the scan was redone on a saved image with no socket. | — | `results/security/gitleaks.txt` section 1 |

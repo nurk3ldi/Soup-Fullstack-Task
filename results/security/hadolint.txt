@@ -1,0 +1,5 @@
+# hadolint (hadolint/hadolint:latest), 2026-11-11
+## before hardening
+-:16 DL3008 warning: Pin versions in apt get install. Instead of `apt-get install <package>` use `apt-get install <package>=<version>`
+## after hardening (three rules are ignored inline, each with its reason next to it in the Dockerfile)
+(exit code 0; nothing between the heading and this line = no findings)

@@ -182,7 +182,7 @@ async def test_oversized_body_is_rejected_and_stores_nothing(client, db, make_pr
     r = await client.post(f"/runs/{run['id']}/metrics", content=body, headers={**a.headers, **JSON}, timeout=60)
     elapsed = time.perf_counter() - started
     print(f"\n[body] {len(body) / 1e6:.1f} MB, 200000 points: status={r.status_code} in {elapsed * 1000:.0f} ms")
-    assert r.status_code in (413, 422)
+    assert r.status_code == 413  # was 422 after a full parse (349 ms) before the body limit existed
     assert_error_shape(r, "oversized")
     assert await db_run_state(db, run["id"]) == {"last_seq": 0, "points": 0, "batches": 0}
     assert (await client.get("/healthz")).status_code == 200

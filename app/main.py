@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
@@ -17,11 +17,29 @@ from app.logging import log
 
 applog.setup(test_mode=config.TEST_MODE)
 
+DEFAULT_ADMIN_TOKEN = "dev-admin-token"  # the public default of docker-compose.yml
+
+# Sent with every response unless the handler set its own value (the pages set a wider CSP).
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    # API responses are data, never documents: nothing may load or run from them.
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.pool = await db.create_pool()
     await db.apply_schema(app.state.pool)
+    if os.environ.get("ADMIN_TOKEN") == DEFAULT_ADMIN_TOKEN:
+        log.warning(
+            "ADMIN_TOKEN is the public default: anyone who can reach this port can create projects. "
+            "Set ADMIN_TOKEN before exposing the service beyond localhost."
+        )
     app.state.bus = Bus(os.environ["DATABASE_URL"])
     await app.state.bus.start()
     try:
@@ -60,10 +78,30 @@ class RequestContextMiddleware:
                 headers["Cache-Control"] = "no-store, private"
                 headers.add_vary_header("Authorization")
                 headers["X-Request-ID"] = request_id
+                for name, value in SECURITY_HEADERS.items():
+                    if name not in headers:
+                        headers[name] = value
             await send(message)
 
+        # Request body limit. Nothing is checked until the application asks for the body, and it
+        # only asks after the credential was accepted (AuthFirstRoute): a caller without a key
+        # gets 401 whatever it sends, and its body is never buffered or parsed.
+        declared = next((v for k, v in scope["headers"] if k == b"content-length"), b"0")
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            if declared.isdigit() and int(declared) > config.MAX_BODY_BYTES:
+                raise HTTPException(413)  # refused on the header alone, before reading anything
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > config.MAX_BODY_BYTES:  # chunked body with no Content-Length
+                    raise HTTPException(413)
+            return message
+
         try:
-            await self.app(scope, receive, send_wrapper)
+            await self.app(scope, limited_receive, send_wrapper)
         except Exception:
             log.exception("unhandled error", extra={"fields": {"request_id": request_id}})
             if status is None:
@@ -89,6 +127,7 @@ class RequestContextMiddleware:
                         "status": status,
                         "duration_ms": round((time.perf_counter() - started) * 1000, 2),
                         "project_id": state.get("project_id"),
+                        "client": (scope.get("client") or ("-",))[0],
                     }
                 },
             )

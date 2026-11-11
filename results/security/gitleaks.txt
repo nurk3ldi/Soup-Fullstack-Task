@@ -1,0 +1,26 @@
+# gitleaks v8.30.1 (ghcr.io/gitleaks/gitleaks:latest), 2026-11-11
+# Secrets are redacted by the tool; author lines removed from this file.
+
+## 1. Default rules only, full git history
+Finding:     curl -s -X POST localhost:8000/projects \
+  -H 'Authorization: Bearer REDACTED'
+Secret:      REDACTED
+RuleID:      curl-auth-header
+Entropy:     3.373557
+File:        README.md
+Line:        26
+Commit:      ddaead2bdf4384a91f4da06a593142c9e3eb4799
+Fingerprint: ddaead2bdf4384a91f4da06a593142c9e3eb4799:README.md:curl-auth-header:26
+
+INF 3 commits scanned.
+INF scanned ~331121 bytes (331.12 KB) in 306ms
+WRN leaks found: 1
+
+## 2. With .gitleaks.toml (default rules + documented allowlist), full git history
+INF 3 commits scanned.
+INF scanned ~331121 bytes (331.12 KB) in 365ms
+INF no leaks found
+
+## 3. With .gitleaks.toml, working tree including uncommitted files
+INF scanned ~673712 bytes (673.71 KB) in 347ms
+INF no leaks found

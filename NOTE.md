@@ -1,6 +1,6 @@
 # Note: proofs, numbers, limits
 
-All numbers are copied from `results/test_output.txt` (95 passed) and `results/load.txt`.
+All numbers are copied from `results/test_output.txt` (100 passed) and `results/load.txt`.
 They vary a little per run; the committed files are the reference.
 
 ## 2. Consistency: page == database
@@ -18,7 +18,7 @@ from the DOM.
 | silent-stall | connection frozen, no error ever delivered | 1 | `since_seq` 179 | 500 = 500 = 500 = 500 |
 | kill | server drops the stream twice | 2 | `Last-Event-ID` 139, 350 | 500 = 500 = 500 = 500 |
 | expired-token | stream killed after its token expired | 2 | `since_seq` 105, 382 | 500 = 500 = 500 = 500 |
-| max-lifetime | server ends every stream after 3 s | 3 | `Last-Event-ID` 176, 348 | 500 = 500 = 500 = 500 |
+| max-lifetime | server ends every stream after 3 s | 3 | `Last-Event-ID` 176, 332 | 500 = 500 = 500 = 500 |
 
 During the network-down window the database went from seq 183 to 389 while the page stayed at
 176, then caught up in 0.7 s. In every scenario `seq` is exactly 1…500 and
@@ -54,12 +54,12 @@ the client is ignored.
 - **Error messages.** Only `{"error":"<code>"}`. A regex check finds no UUIDs, key prefixes or
   internals in the error bodies. 36 malformed requests all returned 4xx with that shape and
   never a 500.
-- **Logs.** 2048 JSON log lines scanned for two API keys, a new key, a stream token, its
+- **Logs.** 4248 JSON log lines scanned for two API keys, a new key, a stream token, its
   signature and the admin token: 0 lines contained any of them.
 - **Timing** (200 requests each, interleaved, measured inside the Docker network only).
-  Another project's run: median 5.269 ms. Nonexistent run: median 5.195 ms. Difference
-  +74 µs, against a request-to-request standard deviation of 685 µs. Unknown key vs revoked
-  key: 3.802 ms vs 3.836 ms, difference +33 µs. Both pairs run the same single query, so no
+  Another project's run: median 6.459 ms. Nonexistent run: median 6.354 ms. Difference
+  +105 µs, against a request-to-request standard deviation of 999 µs. Unknown key vs revoked
+  key: 5.315 ms vs 5.268 ms, difference −47 µs. Both pairs run the same single query, so no
   difference is expected; these numbers do not rule out one below the noise.
 
 **Bug found late.** A request with no valid key and a syntactically broken JSON body got 422
@@ -74,24 +74,33 @@ but unauthenticated input reached the parser. Fixed: the credential is checked f
 | | 600 points ingested across 17 forced reconnects | 600 received, 600 unique, in order |
 | Duplicates | Same batch sent 5 times concurrently | 1 fresh, 4 `duplicate:true`, stored once |
 | | Same `batch_id`, different body; 12-way race of two payloads | 409; exactly one payload stored |
-| Slow client | Client opens the stream and never reads; 20 000 points ingested | dropped after 2.3 s (limit 2.0 s in tests), at most 500 points buffered, RSS unchanged, full catch-up on reconnect |
+| Slow client | Client opens the stream and never reads; 20 000 points ingested | dropped after 2.4 s (limit 2.0 s in tests), at most 500 points buffered, RSS unchanged, full catch-up on reconnect |
 | Partial writes | 999 valid points + 1 NaN | 422, 0 rows |
 | | Exception injected after 50 of 100 inserts | 500, 0 new rows, `last_seq` unchanged, retry stores all 100 |
-| Old key after rotation | Revoke, then use the old key and watch its open stream | API rejects at +15.3 ms, stream closed at +16.5 ms |
+| Old key after rotation | Revoke, then use the old key and watch its open stream | API rejects at +32.4 ms, stream closed at +37.1 ms |
 | | Same, with the revoke notification suppressed | stream closed after 4.70 s (5 s fallback check) |
 | Lost notification | Point committed with no `NOTIFY` | delivered after 1.00 s (2 s safety poll) |
-| Dead client, low rate | Client never reads, 3 points only (stall timeout cannot fire) | released after 2.1 s by the lifetime limit (2 s in tests) |
+| Dead client, low rate | Client never reads, 3 points only (stall timeout cannot fire) | released after 2.0 s by the lifetime limit (2 s in tests) |
 
-A final test checks every run ever written to the test database (1371 runs, 409 128 points,
-71 971 batches, including load-test data): 0 runs with a `seq` gap or repeat, 0 ledger
+A final test checks every run ever written to the test database (1836 runs, 570 564 points,
+114 621 batches, including load-test data): 0 runs with a `seq` gap or repeat, 0 ledger
 mismatches, 0 non-finite values. Mutation checks (code broken on purpose, a test must fail)
 were done by hand for the stream, isolation and E2E tests and are listed in `AI_USAGE.md`.
-The newest files (`test_hardening.py`, the lifetime tests) have not had them.
+The newest files (`test_hardening.py`, `test_security.py`, the lifetime tests) have not had them.
 
 **Known limits.** One API process only. The slow-client design differs from the spec (see
 DESIGN.md). In production the lifetime limit is 300 s, so a dead client can stay registered
-for up to 5 minutes. There is no request body size limit: a 10 MB body is parsed in full
-before it is rejected (349 ms). Revoking a project's last key locks the project out.
+for up to 5 minutes. Revoking a project's last key locks the project out. There is no rate
+limiting and no TLS; both are left to a proxy in front.
+
+**Security review.** Done last, recorded in `SECURITY.md` with scanner output in
+`results/security/`. Ten findings, all fixed or mitigated: the API container ran as root (now
+uid 10001, read-only filesystem, no capabilities); the port was published on all interfaces
+with public default credentials (now localhost only); no body size limit (now 413 above
+2 MiB: the 10 MB request went from 349 ms to 10 ms); no cap on open streams (now 100 per
+project, then 429); security headers missing on API responses. Scanners: gitleaks found no
+real secret, pip-audit no known vulnerability, Trivy 0 CRITICAL and 47 HIGH in Debian system
+packages with no fix available.
 
 ## 5. Load: 50 runs × 10 events/s, 60 s, 50 SSE subscribers
 
@@ -99,23 +108,29 @@ One 8-core machine running the load generator, the API (1 process) and Postgres 
 
 | | batch = 10 (50 req/s) | batch = 1 (500 req/s target) |
 |---|---|---|
-| Achieved | 50.0 req/s, 500 points/s | **309.8 req/s** of 500 |
-| Ingest latency p50 / p95 / p99 | 8.5 / 10.0 / 11.1 ms | 144 / 290 / 379 ms |
-| Latency from scheduled send time, p50 | 9.8 ms | **18.6 s** (backlog grows for as long as the load lasts) |
-| SSE end-to-end lag p50 / p99 | 9.8 / 12.6 ms | 182 / 450 ms |
+| Achieved | 50.0 req/s, 500 points/s | **256.4 req/s** of 500 |
+| Ingest latency p50 / p95 / p99 | 9.0 / 13.9 / 23.0 ms | 167 / 376 / 535 ms |
+| Latency from scheduled send time, p50 | 10.4 ms | **31.3 s** (backlog grows for as long as the load lasts) |
+| SSE end-to-end lag p50 / p99 | 10.4 / 26.3 ms | 212 / 663 ms |
 | Errors, lost points, seq gaps | 0, 0, 0 | 0, 0, 0 |
-| CPU (100 % = one core) | API 23.8 %, DB 22.0 % | API 89.1 %, DB 119.2 % |
+| CPU (100 % = one core) | API 24.9 %, DB 24.0 % | API 88.3 %, DB 114.1 % |
+| Peak memory | API 79 MiB (limit 512), DB 411 MiB | same |
 
-With 4 workers batch = 1 reached 413.9 req/s (`results/load_workers4.txt`), still under 500.
-A rerun on 2026-11-11 gave 277–281 req/s for batch = 1 on the same machine. Bottlenecks in the
-order found: the single Python process (CPU), then Postgres commits, each of which carries a
-`NOTIFY` and queues on a global lock. Neither was changed.
+This is the final code, hardened container included. Earlier runs of batch = 1 on the same
+machine: 309.8 req/s on 2026-11-10 (before the fixes of the last day; the file is in git
+history), 277–281 req/s on 2026-11-11 before the security hardening. Each figure is a single
+run and the test database grew between them, so how much of the drop is code and how much is
+the machine was not isolated. With 4 workers the older code reached 413.9 req/s
+(`results/load_workers4.txt`, not re-measured). Bottlenecks in the order found: the single
+Python process (CPU), then Postgres commits, each of which carries a `NOTIFY` and queues on a
+global lock. Neither was changed.
 
 ### Verdict
 
 > **TODO (author):** SHIP / DON'T SHIP for 50 concurrent runs × 10 events/s, and what to
-> change first. Inputs: the table above; batch = 10 is sustained with 0 errors and p99 11.1 ms;
-> batch = 1 is not sustained (309.8 of 500 req/s) but loses nothing; single-process limit.
+> change first. Inputs: the table above; batch = 10 is sustained with 0 errors and p99 23.0 ms;
+> batch = 1 is not sustained (256.4 of 500 req/s) but loses nothing; single-process limit;
+> the open items in SECURITY.md (no rate limiting, no TLS, default credentials).
 
 ## What surprised me / what still concerns me
 

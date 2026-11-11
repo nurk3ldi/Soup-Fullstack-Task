@@ -35,6 +35,9 @@ TOKEN_TTL_SECONDS = 60
 # detected at low data rates (small writes keep succeeding into kernel buffers), so every stream
 # is ended after a while; a live client reconnects with its cursor and loses nothing.
 MAX_LIFETIME_SECONDS = float(os.environ.get("SSE_MAX_LIFETIME_SECONDS", "300"))
+# Open streams one project may hold at a time (per API process). Each stream costs a task and a
+# database read every POLL_SECONDS, so without a cap one key could exhaust the server.
+MAX_STREAMS_PER_PROJECT = int(os.environ.get("SSE_MAX_STREAMS_PER_PROJECT", "100"))
 
 
 class Stats:
@@ -42,10 +45,12 @@ class Stats:
     sse_overflow_total = 0
     max_buffered_points = 0  # largest page any connection ever held
     sse_recycled_total = 0  # streams ended by the server because they reached the maximum lifetime
+    sse_rejected_total = 0  # streams refused because the project already had too many open
     max_lifetime_seconds = MAX_LIFETIME_SECONDS  # changed only by the TEST_MODE hook
 
 
 _tasks_by_run: dict[str, set[asyncio.Task]] = defaultdict(set)
+_streams_by_project: dict[UUID, int] = defaultdict(int)
 
 
 class _Dropped(Exception):
@@ -60,15 +65,38 @@ def _format(row) -> bytes:
 class EventStream(Response):
     """ASGI response written by hand, because every write needs a timeout (see STALL_SECONDS)."""
 
-    def __init__(self, app, run_id: UUID, key_id: UUID, cursor: int):
+    def __init__(self, app, run_id: UUID, project_id: UUID, key_id: UUID, cursor: int):
         self.status_code = 200
         self.background = None
         self.app = app
         self.run_id = run_id
+        self.project_id = project_id
         self.key_id = key_id
         self.cursor = cursor
 
     async def __call__(self, scope, receive, send):
+        # Check and count with no await in between, so concurrent connects cannot overshoot.
+        if _streams_by_project[self.project_id] >= MAX_STREAMS_PER_PROJECT:
+            Stats.sse_rejected_total += 1
+            log.warning("stream refused: too many open streams for this project", extra={"fields": {"run_id": str(self.run_id)}})
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 429,
+                    "headers": [(b"content-type", b"application/json"), (b"retry-after", b"5")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b'{"error":"too_many_streams"}'})
+            return
+        _streams_by_project[self.project_id] += 1
+        try:
+            await self._serve(receive, send)
+        finally:
+            _streams_by_project[self.project_id] -= 1
+            if not _streams_by_project[self.project_id]:
+                del _streams_by_project[self.project_id]
+
+    async def _serve(self, receive, send):
         await send(
             {
                 "type": "http.response.start",
@@ -235,7 +263,7 @@ async def stream(
         "stream open",
         extra={"fields": {"request_id": request.state.request_id, "run_id": str(rid), "cursor": cursor, "resume_source": source}},
     )
-    return EventStream(request.app, rid, principal.key_id, cursor)
+    return EventStream(request.app, rid, principal.project_id, principal.key_id, cursor)
 
 
 # --- test-only hooks: this router is mounted only when TEST_MODE=1 ---------------------------
@@ -252,6 +280,11 @@ async def debug_stats(request: Request):
         "max_buffered_points": Stats.max_buffered_points,
         "sse_recycled_total": Stats.sse_recycled_total,
         "max_lifetime_seconds": Stats.max_lifetime_seconds,
+        "sse_rejected_total": Stats.sse_rejected_total,
+        "max_streams_per_project": MAX_STREAMS_PER_PROJECT,
+        "max_body_bytes": config.MAX_BODY_BYTES,
+        "uid": os.getuid(),
+        "rootfs_writable": os.access("/srv", os.W_OK),
         "page_size": PAGE_SIZE,
         "stall_seconds": STALL_SECONDS,
         "rss_kb": rss_kb,

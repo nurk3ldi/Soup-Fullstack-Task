@@ -66,7 +66,7 @@ Three ways a stream ends, and all of them resume the same way:
 - Keys are stored as SHA-256 only. Run ids are random UUIDv4.
 - `EventSource` cannot send headers, so the stream takes a token: HMAC-signed, 60 s, bound to
   project + run + key. The key is re-checked at connect, on revocation (pushed by `NOTIFY`,
-  ~15 ms) and every 5 s as a fallback; a revoked key closes its open streams.
+  tens of milliseconds) and every 5 s as a fallback; a revoked key closes its open streams.
 - Responses carry `Cache-Control: no-store, private` and `Vary: Authorization`. There is no
   in-process cache. Pages are static files with a strict CSP; they contain no data.
 - Logs are JSON with request id and project id. Query values are masked, `token=` is
@@ -75,4 +75,6 @@ Three ways a stream ends, and all of them resume the same way:
 ## Limits
 
 1–1000 points per batch · name 1–64 characters, no control characters · finite doubles only ·
-`step` 0…2⁶³−1 · one API process (the bus and stream registry are per process).
+`step` 0…2⁶³−1 · request body ≤ 2 MiB · ≤ 100 open streams per project · one API process
+(the bus, stream registry and stream cap are per process). No rate limiting and no TLS: both
+belong to a proxy in front. The security review is in SECURITY.md.

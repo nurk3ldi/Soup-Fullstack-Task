@@ -61,6 +61,10 @@ async httpx script. Compose services: `db`, `api`, and `tests` (profile).
   project_id + run_id + key_id; revocation re-checked at connect and every 5 s.
 - Responses carry `Cache-Control: no-store, private` and `Vary: Authorization`.
 - Limits: ≤ 1000 points per batch, name ≤ 64 chars, finite floats only → else 422.
+  Body > 2 MiB → 413. More than 100 open streams per project → 429.
+- The API container is unprivileged and its root filesystem is read-only: application code
+  must never write to disk (use `/tmp`, a 16 MB tmpfs, if it ever has to).
+- The API port is published on 127.0.0.1 only; do not change the default to 0.0.0.0.
 
 ## Commands
 
@@ -247,7 +251,7 @@ Update the checkboxes and the "State notes" below at the end of every working se
   10–40 % idle CPU in `docker stats` (healthchecks are now 30 s with a 1 s start interval,
   and CPU is taken from cgroup counters); connections opened in one burst all land on one
   uvicorn worker.
-- **RESUME HERE (2026-11-11 afternoon).** Steps 1-9 done, 95 tests passing. Left for the
+- **RESUME HERE (2026-11-11 afternoon).** Steps 1-9 and the security review done, 100 tests passing. Left for the
   user: the verdict and the surprises paragraph in NOTE.md (both marked TODO), reviewing the
   "pending review" rows in AI_USAGE.md, and the final commit + push. The real deadline was
   never confirmed (estimate: 2026-11-11 16:13 +05).
@@ -281,7 +285,7 @@ Update the checkboxes and the "State notes" below at the end of every working se
 
 ### Known failing tests / open problems
 
-- No failing tests (95 passed, 2026-11-11; `results/test_output.txt` is from that run).
+- No failing tests (100 passed, 2026-11-11; `results/test_output.txt` is from that run).
 - Fixed 2026-11-11 with the user's approval: unauthenticated request + broken JSON body got
   422 instead of 401, because FastAPI decodes the body before dependencies run. Fix:
   `auth.AuthFirstRoute` (route class on all three routers) checks the admin token / key before
@@ -292,9 +296,29 @@ Update the checkboxes and the "State notes" below at the end of every working se
   (`SSE_MAX_LIFETIME_SECONDS`, default 300, +-10 % jitter; TEST_MODE hook
   `POST /debug/stream-lifetime/{seconds}`, fixture `stream_lifetime`); (3) batch=1 at
   500 req/s stays as measured, for the verdict.
-- Still open: no request body size limit; revoking the last key locks a project out; no
-  mutation checks for `test_hardening.py` and the lifetime tests; NOTE.md may be slightly over
-  2 printed pages; the verdict and surprises paragraph in NOTE.md are TODO for the user.
+- 2026-11-11, security review (see SECURITY.md, raw output in `results/security/`). Fixed:
+  API runs as uid 10001 on a read-only rootfs with all capabilities dropped (compose anchor
+  `x-hardening`); port published on 127.0.0.1 (`API_BIND`); body limit 2 MiB → 413
+  (`MAX_BODY_BYTES`, enforced in `RequestContextMiddleware.limited_receive`, only once the app
+  reads the body, so auth still comes first); 100 open streams per project → 429
+  (`SSE_MAX_STREAMS_PER_PROJECT`, `api-test` uses 10); security headers on every response,
+  no `Server` header; dependencies pinned to exact versions; `client` field in request logs;
+  startup warning while `ADMIN_TOKEN` is the default. Tests: `tests/test_security.py` (5).
+- Still open (all listed in SECURITY.md): no rate limiting, no TLS, default credentials exist,
+  keys never expire, limits are per process, `GET /runs` not paginated, 47 unfixable HIGH
+  findings in the base image, revoking the last key locks a project out; no mutation checks
+  for `test_hardening.py`, `test_security.py` and the lifetime tests; the verdict and
+  surprises paragraph in NOTE.md are TODO for the user.
+- `results/load.txt` was regenerated on the final, hardened code: batch=10 sustained (p99
+  23.0 ms), batch=1 256.4 req/s. Older single runs: 309.8 (2026-11-10), 277-281 (2026-11-11
+  before hardening). Cause of the drop not isolated. `load_workers4.txt` is still old code.
+- Project skills: 10 third-party skills in `.claude/skills/` (git-ignored; source and commit in
+  AI_USAGE.md). They are generic checklists. Do not run their `scripts/` (not installed, not
+  reviewed) and do not install the other 808.
+- Scanners run through docker without mounting the docker socket: Trivy scans a
+  `docker save` tarball (`--input`); commands are at the end of SECURITY.md. A gitleaks run
+  with `-c /dev/null` has NO rules and always reports 0: use `.gitleaks.toml` or a config with
+  `[extend] useDefault = true`.
 
 ## Deliverables checklist
 

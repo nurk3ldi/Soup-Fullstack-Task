@@ -4,3 +4,6 @@ __pycache__/
 .venv/
 .env
 test-results/
+
+# Claude Code project skills (third-party, see AI_USAGE.md) and local settings
+.claude/

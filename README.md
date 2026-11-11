@@ -8,6 +8,7 @@ updates live over SSE, and a run list. Built to answer one question with evidenc
 |---|---|
 | [DESIGN.md](DESIGN.md) | Event format and ordering, re-sent batches, catch-up, isolation (1 page) |
 | [NOTE.md](NOTE.md) | Proofs, measured numbers, what the tests do not catch, verdict |
+| [SECURITY.md](SECURITY.md) | Security review: findings, fixes, scanner results, what is still open |
 | [AI_USAGE.md](AI_USAGE.md) | Where AI was used; what was accepted, changed or rejected |
 | [results/](results/) | Raw test output, load test output, screenshots |
 | [SPEC.md](SPEC.md) | The working specification the code was built from |
@@ -19,6 +20,18 @@ Requires Docker with the compose plugin. Nothing is installed on the host.
 ```bash
 docker compose up --build -d      # db + api; the UI is at http://localhost:8000
 ```
+
+The port is published on `127.0.0.1` only, because the default admin token and database
+password are public. To expose the service, change them first:
+
+```bash
+API_BIND=0.0.0.0 ADMIN_TOKEN=<long random string> POSTGRES_PASSWORD=<another> docker compose up -d
+```
+
+Postgres reads `POSTGRES_PASSWORD` only when it creates a new database volume. On an existing
+volume, change the password inside Postgres first (`ALTER USER tracker PASSWORD ...`) or remove
+the volume, otherwise the API will fail to connect. Put a TLS-terminating
+proxy with rate limiting in front; see [SECURITY.md](SECURITY.md).
 
 Create a project (the admin token defaults to `dev-admin-token`; set `ADMIN_TOKEN` to change it):
 
@@ -58,13 +71,14 @@ All endpoints except `POST /projects` and the stream take `Authorization: Bearer
 | `GET /healthz` | Liveness and database check |
 
 Errors are always `{"error": "<code>"}`: `unauthorized` (401), `not_found` (404),
-`batch_id_reused` (409), `invalid_request` (422).
+`batch_id_reused` (409), `payload_too_large` (413, body over 2 MiB), `invalid_request` (422),
+`too_many_streams` (429).
 
 ## Tests
 
 ```bash
 docker compose --profile tests up --build -d api api-test
-docker compose run --rm tests                 # 95 tests, about 2 minutes
+docker compose run --rm tests                 # 100 tests, about 2 minutes
 docker compose run --rm tests sh -c 'pytest -v -s 2>&1 | tee results/test_output.txt'
 ```
 
@@ -78,6 +92,7 @@ code, rebuild both services with the first command.
 | `tests/test_isolation.py` | Project A cannot read, write, subscribe to or guess anything of project B |
 | `tests/test_silent_failures.py` | Lost events, duplicates, slow client, partial writes, key rotation, dead clients |
 | `tests/test_hardening.py` | Malformed input, races, bit-exact values, invariants over the whole database |
+| `tests/test_security.py` | Security headers, body size limit, stream cap, unprivileged container, log fields |
 | `tests/test_auth_runs.py`, `test_ingest.py`, `test_stream.py`, `test_ui.py` | Feature tests per component |
 
 ## Load test
@@ -91,6 +106,10 @@ sh loadtest/run.sh        # 50 runs × 10 events/s, batch 10 then batch 1, ~3.5 
 | Variable | Default | Meaning |
 |---|---|---|
 | `ADMIN_TOKEN` | `dev-admin-token` | Token for `POST /projects`. Change it outside local use. |
+| `POSTGRES_PASSWORD` | `tracker` | Database password. Change it outside local use. |
+| `API_BIND` | `127.0.0.1` | Host address the API port is published on |
+| `MAX_BODY_BYTES` | 2097152 | Largest request body; larger ones get 413 |
+| `SSE_MAX_STREAMS_PER_PROJECT` | 100 | Open streams per project (per process); the next gets 429 |
 | `STREAM_SECRET` | random per process | HMAC secret for stream tokens. Required with more than one worker. |
 | `WEB_CONCURRENCY` | 1 | uvicorn workers |
 | `DB_POOL_MAX` | 20 | Database connections per worker |
@@ -105,5 +124,5 @@ sh loadtest/run.sh        # 50 runs × 10 events/s, batch 10 then batch 1, ~3.5 
 app/        main.py auth.py routes.py ingest.py stream.py bus.py logging.py errors.py schema.sql static/
 tests/      pytest suite, netproxy.py (fault-injecting TCP proxy for the browser tests)
 loadtest/   load.py, run.sh
-results/    test_output.txt, load.txt, load_workers4.txt, screens/
+results/    test_output.txt, load.txt, load_workers4.txt, screens/, security/ (scanner output)
 ```

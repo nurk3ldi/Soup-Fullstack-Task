@@ -1,0 +1,15 @@
+# gitleaks configuration: default rules, plus two documented exceptions.
+#   docker run --rm -v "$PWD":/repo:ro ghcr.io/gitleaks/gitleaks:latest git /repo --redact
+title = "mini experiment tracker"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public local-development admin token: the documented default of docker-compose.yml, not a secret. See SECURITY.md, finding F3."
+regexTarget = "line"
+regexes = ['''dev-admin-token''']
+
+[[allowlists]]
+description = "Third-party skill files (generic example commands), not part of the application and not committed."
+paths = ['''^\.claude/''']

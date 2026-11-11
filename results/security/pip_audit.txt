@@ -1,0 +1,29 @@
+# pip-audit of the packages installed in the api image, 2026-11-11T09:53:46Z
+--- installed (pip freeze)
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.16.0
+asyncpg==0.32.0
+click==8.5.1
+fastapi==0.162.3
+h11==0.16.0
+httptools==0.9.0
+idna==3.20
+opentelemetry-api==1.45.2
+pydantic==2.14.3
+pydantic_core==2.50.4
+python-dotenv==1.2.4
+PyYAML==6.0.3
+starlette==1.10.0
+typing-inspection==0.4.5
+typing_extensions==4.16.0
+uvicorn==0.54.0
+uvloop==0.23.0
+watchfiles==1.3.0
+websockets==17.4
+--- pip-audit
+WARNING:pip_audit._cli:--no-deps is supported, but users are encouraged to fully hash their pinned dependencies
+WARNING:pip_audit._cli:Consider using a tool like `pip-compile`: https://pip-tools.readthedocs.io/en/latest/#using-hashes
+No known vulnerabilities found
+(exit 0)
+Python 3.12.16

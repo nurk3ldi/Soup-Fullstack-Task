@@ -1,4 +1,5 @@
-pytest>=8,<10
-pytest-asyncio>=0.24,<2
-httpx>=0.27,<1
-playwright>=1.48,<2
+# Exact versions, as tested. Only installed in the tests image.
+pytest==9.2.0
+pytest-asyncio==1.4.1.post1
+httpx==0.28.1
+playwright==1.65.0

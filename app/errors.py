@@ -19,7 +19,7 @@ def not_found() -> ApiError:
     return ApiError(404, "not_found")
 
 
-_HTTP_CODES = {404: "not_found", 405: "method_not_allowed"}
+_HTTP_CODES = {404: "not_found", 405: "method_not_allowed", 413: "payload_too_large"}
 
 
 def _response(status: int, code: str) -> JSONResponse:

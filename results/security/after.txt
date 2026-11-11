@@ -1,0 +1,69 @@
+# After hardening, 2026-11-11T10:02:45Z
+=== GET /
+HTTP/1.1 200 OK
+content-security-policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+x-content-type-options: nosniff
+referrer-policy: no-referrer
+content-type: text/html; charset=utf-8
+cache-control: no-store, private
+vary: Authorization
+x-frame-options: DENY
+cross-origin-resource-policy: same-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+=== GET /healthz
+HTTP/1.1 200 OK
+content-type: application/json
+cache-control: no-store, private
+vary: Authorization
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: no-referrer
+cross-origin-resource-policy: same-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+content-security-policy: default-src 'none'; frame-ancestors 'none'
+=== GET /runs
+HTTP/1.1 401 Unauthorized
+content-type: application/json
+cache-control: no-store, private
+vary: Authorization
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: no-referrer
+cross-origin-resource-policy: same-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+content-security-policy: default-src 'none'; frame-ancestors 'none'
+=== GET /static/app.js
+HTTP/1.1 200 OK
+content-type: text/javascript; charset=utf-8
+cache-control: no-store, private
+vary: Authorization
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: no-referrer
+cross-origin-resource-policy: same-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+content-security-policy: default-src 'none'; frame-ancestors 'none'
+=== GET /nope
+HTTP/1.1 404 Not Found
+content-type: application/json
+cache-control: no-store, private
+vary: Authorization
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: no-referrer
+cross-origin-resource-policy: same-origin
+permissions-policy: camera=(), microphone=(), geolocation=()
+content-security-policy: default-src 'none'; frame-ancestors 'none'
+=== container user / privileges (api)
+uid=10001 gid=10001
+CapEff:	0000000000000000
+NoNewPrivs:	1
+touch: cannot touch '/srv/x': Read-only file system
+rootfs not writable
+User=10001:10001 ReadonlyRootfs=true CapDrop=[ALL] SecurityOpt=[no-new-privileges:true] PidsLimit=256 Memory=536870912
+=== published ports
+api 127.0.0.1:8000->8000/tcp
+api-test 8000/tcp
+db 5432/tcp
+=== startup warning
+"msg": "ADMIN_TOKEN is the public default: anyone who can reach this port can create projects. Set ADMIN_TOKEN before exposing the service beyond localhost."

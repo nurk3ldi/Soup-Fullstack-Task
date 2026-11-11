@@ -1,0 +1,46 @@
+# Baseline before hardening, 2026-11-11T09:52:31Z, commit ddaead2
+=== GET /
+HTTP/1.1 200 OK
+server: uvicorn
+content-security-policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+x-content-type-options: nosniff
+referrer-policy: no-referrer
+content-type: text/html; charset=utf-8
+cache-control: no-store, private
+vary: Authorization
+=== GET /healthz
+HTTP/1.1 200 OK
+server: uvicorn
+content-type: application/json
+cache-control: no-store, private
+vary: Authorization
+=== GET /runs
+HTTP/1.1 401 Unauthorized
+server: uvicorn
+content-type: application/json
+cache-control: no-store, private
+vary: Authorization
+=== GET /static/app.js
+HTTP/1.1 200 OK
+server: uvicorn
+content-type: text/javascript; charset=utf-8
+cache-control: no-store, private
+vary: Authorization
+=== GET /nope
+HTTP/1.1 404 Not Found
+server: uvicorn
+content-type: application/json
+cache-control: no-store, private
+vary: Authorization
+=== container user / privileges (api)
+uid=0 gid=0
+CapEff:	00000000a80425fb
+NoNewPrivs:	0
+rootfs writable
+User= ReadonlyRootfs=false CapDrop=[] SecurityOpt=[] PidsLimit=<nil> Memory=0
+=== published ports
+api 0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+api-test 8000/tcp
+db 5432/tcp
+=== body size
+POST /runs 20 MB body, no key: 401 in 0.002371s
