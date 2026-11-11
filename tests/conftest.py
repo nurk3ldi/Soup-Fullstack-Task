@@ -196,6 +196,23 @@ async def stream_lifetime(client):
         await client.post("/debug/stream-lifetime/0")
 
 
+@pytest.fixture
+async def rate_limits(client):
+    """Switch the server's rate limiters on with the given numbers (TEST_MODE hook). Every call
+    starts from empty buckets; the configured values (off, on the test service) come back after."""
+
+    async def _set(**limits) -> dict:
+        base = {"project_rps": 0, "project_burst": 0, "auth_fail_rps": 0, "auth_fail_burst": 0}
+        r = await client.post("/debug/rate-limits", json={**base, **limits})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    try:
+        yield _set
+    finally:
+        await client.post("/debug/rate-limits", json={})
+
+
 # --- browser ---------------------------------------------------------------------------------
 
 

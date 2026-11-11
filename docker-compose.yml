@@ -44,6 +44,11 @@ services:
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
       STREAM_SECRET: ${STREAM_SECRET:-}
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      # Per process. Requests per second one project may make, and failed credentials one client
+      # address may present (burst, then refill per second). 0 switches a limit off.
+      RATE_LIMIT_PROJECT_RPS: ${RATE_LIMIT_PROJECT_RPS:-600}
+      RATE_LIMIT_AUTH_FAIL_BURST: ${RATE_LIMIT_AUTH_FAIL_BURST:-20}
+      RATE_LIMIT_AUTH_FAIL_RPS: ${RATE_LIMIT_AUTH_FAIL_RPS:-1}
     depends_on:
       db:
         condition: service_healthy
@@ -77,6 +82,11 @@ services:
       SSE_STALL_SECONDS: "2"   # production default is 10; shortened so the overflow test is quick
       SSE_PING_SECONDS: "1"    # production default is 15; shortened so stale-connection tests are quick
       SSE_MAX_STREAMS_PER_PROJECT: "10"   # production default is 100; lowered so the cap test is quick
+      # Rate limits are off here: the suite fires thousands of requests, many with bad keys on
+      # purpose, from one address. tests/test_ratelimit.py switches them on through a debug hook
+      # and also checks that the plain `api` service has them on by default.
+      RATE_LIMIT_PROJECT_RPS: "0"
+      RATE_LIMIT_AUTH_FAIL_BURST: "0"
     depends_on:
       db:
         condition: service_healthy

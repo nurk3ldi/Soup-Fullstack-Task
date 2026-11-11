@@ -214,6 +214,7 @@ async def test_debug_endpoints_do_not_exist_without_test_mode(plain_client, make
         ("GET", "/debug/logs"),
         ("POST", f"/debug/kill-streams/{run['id']}"),
         ("POST", "/debug/stream-lifetime/1"),
+        ("POST", "/debug/rate-limits"),
     ):
         for headers in ({}, a.headers):
             r = await plain_client.request(method, path, headers=headers)

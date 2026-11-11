@@ -62,7 +62,9 @@ Three ways a stream ends, and all of them resume the same way:
   (`WHERE id = $1 AND project_id = $2`), the same code path and the same bytes:
   `404 {"error":"not_found"}`. There is no 403 anywhere.
 - Every bad credential (missing, malformed, unknown, revoked) gives the same
-  `401 {"error":"unauthorized"}`, decided before the request body is read.
+  `401 {"error":"unauthorized"}`, decided before the request body is read. An address that
+  keeps failing is answered `429` instead, valid credential or not, so the answer never
+  tells a guesser whether a guess was right.
 - Keys are stored as SHA-256 only. Run ids are random UUIDv4.
 - `EventSource` cannot send headers, so the stream takes a token: HMAC-signed, 60 s, bound to
   project + run + key. The key is re-checked at connect, on revocation (pushed by `NOTIFY`,
@@ -75,6 +77,7 @@ Three ways a stream ends, and all of them resume the same way:
 ## Limits
 
 1–1000 points per batch · name 1–64 characters, no control characters · finite doubles only ·
-`step` 0…2⁶³−1 · request body ≤ 2 MiB · ≤ 100 open streams per project · one API process
-(the bus, stream registry and stream cap are per process). No rate limiting and no TLS: both
-belong to a proxy in front. The security review is in SECURITY.md.
+`step` 0…2⁶³−1 · request body ≤ 2 MiB · ≤ 100 open streams per project
+· 600 requests/s per project · 20 failed credentials per client address, then 1 per second ·
+one API process (the bus, stream registry and all limits are per process). No TLS: that
+belongs to a proxy in front. The security review is in SECURITY.md.

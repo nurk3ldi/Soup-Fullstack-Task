@@ -61,7 +61,9 @@ async httpx script. Compose services: `db`, `api`, and `tests` (profile).
   project_id + run_id + key_id; revocation re-checked at connect and every 5 s.
 - Responses carry `Cache-Control: no-store, private` and `Vary: Authorization`.
 - Limits: ≤ 1000 points per batch, name ≤ 64 chars, finite floats only → else 422.
-  Body > 2 MiB → 413. More than 100 open streams per project → 429.
+  Body > 2 MiB → 413. More than 100 open streams per project → 429. Over the rate limits → 429.
+- 401 is the answer to every bad credential, except from an address that has used up its
+  failure allowance: that address gets 429 for everything that needs a credential.
 - The API container is unprivileged and its root filesystem is read-only: application code
   must never write to disk (use `/tmp`, a 16 MB tmpfs, if it ever has to).
 - The API port is published on 127.0.0.1 only; do not change the default to 0.0.0.0.
@@ -251,8 +253,8 @@ Update the checkboxes and the "State notes" below at the end of every working se
   10–40 % idle CPU in `docker stats` (healthchecks are now 30 s with a 1 s start interval,
   and CPU is taken from cgroup counters); connections opened in one burst all land on one
   uvicorn worker.
-- **RESUME HERE (2026-11-11 afternoon).** Steps 1-9 and the security review done, 100 tests passing. Left for the
-  user: the verdict and the surprises paragraph in NOTE.md (both marked TODO), reviewing the
+- **RESUME HERE (2026-11-11 afternoon).** Steps 1-9, the security review and rate limiting done, 106 tests passing. Left for the
+  user: reviewing the
   "pending review" rows in AI_USAGE.md, and the final commit + push. The real deadline was
   never confirmed (estimate: 2026-11-11 16:13 +05).
 - On resume, first check the stack: `docker compose --profile tests ps`. If docker says
@@ -285,7 +287,7 @@ Update the checkboxes and the "State notes" below at the end of every working se
 
 ### Known failing tests / open problems
 
-- No failing tests (100 passed, 2026-11-11; `results/test_output.txt` is from that run).
+- No failing tests (106 passed, 2026-11-11; `results/test_output.txt` is from that run).
 - Fixed 2026-11-11 with the user's approval: unauthenticated request + broken JSON body got
   422 instead of 401, because FastAPI decodes the body before dependencies run. Fix:
   `auth.AuthFirstRoute` (route class on all three routers) checks the admin token / key before
@@ -304,14 +306,24 @@ Update the checkboxes and the "State notes" below at the end of every working se
   (`SSE_MAX_STREAMS_PER_PROJECT`, `api-test` uses 10); security headers on every response,
   no `Server` header; dependencies pinned to exact versions; `client` field in request logs;
   startup warning while `ADMIN_TOKEN` is the default. Tests: `tests/test_security.py` (5).
-- Still open (all listed in SECURITY.md): no rate limiting, no TLS, default credentials exist,
+- 2026-11-11, rate limiting added on the user's request: `app/ratelimit.py` (token buckets,
+  per process). Per project `RATE_LIMIT_PROJECT_RPS` (600, burst 2x) → 429 `rate_limited`;
+  per client address `RATE_LIMIT_AUTH_FAIL_BURST` (20) / `_RPS` (1) for failed credentials,
+  after which every credentialed request from that address gets 429 unseen. Enforced in
+  `auth.AuthFirstRoute` and in `stream.stream()`. **Off on `api-test`** (env set to 0) because
+  the suite sends bursts and bad keys on purpose; tests switch it on with the fixture
+  `rate_limits` (hook `POST /debug/rate-limits`). The plain `api` has it on: a test that sends
+  more than ~20 bad credentials to `PLAIN_API_URL` will lock the tests container out for a
+  while. Tests: `tests/test_ratelimit.py` (6).
+- Still open (all listed in SECURITY.md): rate limits are per process only, no TLS, default credentials exist,
   keys never expire, limits are per process, `GET /runs` not paginated, 47 unfixable HIGH
   findings in the base image, revoking the last key locks a project out; no mutation checks
-  for `test_hardening.py`, `test_security.py` and the lifetime tests; the verdict and
-  surprises paragraph in NOTE.md are TODO for the user.
-- `results/load.txt` was regenerated on the final, hardened code: batch=10 sustained (p99
-  23.0 ms), batch=1 256.4 req/s. Older single runs: 309.8 (2026-11-10), 277-281 (2026-11-11
-  before hardening). Cause of the drop not isolated. `load_workers4.txt` is still old code.
+  for `test_hardening.py`, `test_security.py`, `test_ratelimit.py` and the lifetime tests; the verdict and
+  surprises paragraph in NOTE.md were written by the user on 2026-11-11 (do not rewrite them).
+- `results/load.txt` is from the final code (hardening + rate limits on): batch=10 sustained
+  (p99 11.0 ms), batch=1 316.2 req/s, 0 errors. Five single runs of batch=1 over two days:
+  309.8, 277, 281, 256.4, 316.2: the spread is the machine, not the code. Do not read a
+  10 % difference between two single runs as a regression. `load_workers4.txt` is old code.
 - Project skills: 10 third-party skills in `.claude/skills/` (git-ignored; source and commit in
   AI_USAGE.md). They are generic checklists. Do not run their `scripts/` (not installed, not
   reviewed) and do not install the other 808.

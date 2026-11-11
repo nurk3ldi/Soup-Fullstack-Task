@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request
 from starlette.responses import Response
 
-from app import auth, config
+from app import auth, config, ratelimit
 from app.errors import not_found, unauthorized
 from app.ingest import point_out, read_after
 from app.logging import log
@@ -240,13 +240,19 @@ async def stream(
 ):
     # EventSource cannot send an Authorization header, so the credential is a short-lived token
     # bound to (project, run, key). Every way of failing here is the same 401.
+    ratelimit.guard_address(request)
+
+    def denied():
+        ratelimit.credential_failed(request)
+        return unauthorized()
+
     try:
         rid = UUID(run_id)
     except ValueError:
-        raise unauthorized() from None
+        raise denied() from None
     principal = auth.verify_stream_token(token, rid)
     if principal is None:
-        raise unauthorized()
+        raise denied()
     # Token is authentic and unexpired; now the facts it claims must still be true.
     still_valid = await request.app.state.pool.fetchval(
         "SELECT 1 FROM api_keys k JOIN runs r ON r.project_id = k.project_id "
@@ -256,7 +262,8 @@ async def stream(
         rid,
     )
     if still_valid is None:
-        raise unauthorized()
+        raise denied()
+    ratelimit.guard_project(principal.project_id)
     request.state.project_id = str(principal.project_id)
     cursor, source = _resume_point(request, since_seq)
     log.info(
@@ -283,6 +290,9 @@ async def debug_stats(request: Request):
         "sse_rejected_total": Stats.sse_rejected_total,
         "max_streams_per_project": MAX_STREAMS_PER_PROJECT,
         "max_body_bytes": config.MAX_BODY_BYTES,
+        "rate_limited_project_total": ratelimit.Stats.rate_limited_project_total,
+        "rate_limited_address_total": ratelimit.Stats.rate_limited_address_total,
+        "rate_limits": ratelimit.settings(),
         "uid": os.getuid(),
         "rootfs_writable": os.access("/srv", os.W_OK),
         "page_size": PAGE_SIZE,
@@ -307,3 +317,12 @@ async def debug_stream_lifetime(seconds: float):
     """Maximum lifetime for streams opened from now on; 0 restores the configured value."""
     Stats.max_lifetime_seconds = seconds if seconds > 0 else MAX_LIFETIME_SECONDS
     return {"max_lifetime_seconds": Stats.max_lifetime_seconds}
+
+
+@debug_router.post("/debug/rate-limits")
+async def debug_rate_limits(request: Request):
+    """Replace both rate limiters (and forget their state). An empty object restores the
+    configured values. Keys: project_rps, project_burst, auth_fail_rps, auth_fail_burst."""
+    wanted = await request.json()
+    allowed = {"project_rps", "project_burst", "auth_fail_rps", "auth_fail_burst"}
+    return ratelimit.configure(**{k: v for k, v in wanted.items() if k in allowed})

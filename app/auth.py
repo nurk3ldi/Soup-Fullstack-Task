@@ -9,7 +9,8 @@ from uuid import UUID
 from fastapi import Request
 from fastapi.routing import APIRoute
 
-from app.errors import unauthorized
+from app import ratelimit
+from app.errors import ApiError, unauthorized
 
 KEY_PREFIX_LEN = 8
 
@@ -75,8 +76,18 @@ class AuthFirstRoute(APIRoute):
         checks = [c for c in (require_admin, require_key) if _depends_on(self.dependant, c)]
 
         async def auth_first(request: Request):
-            for check in checks:
-                await check(request)
+            if checks:
+                ratelimit.guard_address(request)
+                try:
+                    for check in checks:
+                        await check(request)
+                except ApiError as exc:
+                    if exc.status == 401:
+                        ratelimit.credential_failed(request)
+                    raise
+                principal = getattr(request.state, "principal", None)
+                if principal is not None:
+                    ratelimit.guard_project(principal.project_id)
             return await handler(request)
 
         return auth_first

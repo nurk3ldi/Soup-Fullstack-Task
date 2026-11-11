@@ -30,8 +30,8 @@ API_BIND=0.0.0.0 ADMIN_TOKEN=<long random string> POSTGRES_PASSWORD=<another> do
 
 Postgres reads `POSTGRES_PASSWORD` only when it creates a new database volume. On an existing
 volume, change the password inside Postgres first (`ALTER USER tracker PASSWORD ...`) or remove
-the volume, otherwise the API will fail to connect. Put a TLS-terminating
-proxy with rate limiting in front; see [SECURITY.md](SECURITY.md).
+the volume, otherwise the API will fail to connect. Put a TLS-terminating proxy in front; see
+[SECURITY.md](SECURITY.md).
 
 Create a project (the admin token defaults to `dev-admin-token`; set `ADMIN_TOKEN` to change it):
 
@@ -72,13 +72,13 @@ All endpoints except `POST /projects` and the stream take `Authorization: Bearer
 
 Errors are always `{"error": "<code>"}`: `unauthorized` (401), `not_found` (404),
 `batch_id_reused` (409), `payload_too_large` (413, body over 2 MiB), `invalid_request` (422),
-`too_many_streams` (429).
+`too_many_streams` and `rate_limited` (429, with `Retry-After`).
 
 ## Tests
 
 ```bash
 docker compose --profile tests up --build -d api api-test
-docker compose run --rm tests                 # 100 tests, about 2 minutes
+docker compose run --rm tests                 # 106 tests, about 2.5 minutes
 docker compose run --rm tests sh -c 'pytest -v -s 2>&1 | tee results/test_output.txt'
 ```
 
@@ -93,6 +93,7 @@ code, rebuild both services with the first command.
 | `tests/test_silent_failures.py` | Lost events, duplicates, slow client, partial writes, key rotation, dead clients |
 | `tests/test_hardening.py` | Malformed input, races, bit-exact values, invariants over the whole database |
 | `tests/test_security.py` | Security headers, body size limit, stream cap, unprivileged container, log fields |
+| `tests/test_ratelimit.py` | Request rate per project, failed credentials per client address |
 | `tests/test_auth_runs.py`, `test_ingest.py`, `test_stream.py`, `test_ui.py` | Feature tests per component |
 
 ## Load test
@@ -110,6 +111,9 @@ sh loadtest/run.sh        # 50 runs × 10 events/s, batch 10 then batch 1, ~3.5 
 | `API_BIND` | `127.0.0.1` | Host address the API port is published on |
 | `MAX_BODY_BYTES` | 2097152 | Largest request body; larger ones get 413 |
 | `SSE_MAX_STREAMS_PER_PROJECT` | 100 | Open streams per project (per process); the next gets 429 |
+| `RATE_LIMIT_PROJECT_RPS` | 600 | Requests per second per project (per process); burst is twice this (`RATE_LIMIT_PROJECT_BURST`). 0 = off |
+| `RATE_LIMIT_AUTH_FAIL_BURST` | 20 | Failed credentials one client address may present before it is refused. 0 = off |
+| `RATE_LIMIT_AUTH_FAIL_RPS` | 1 | How fast that allowance comes back, per second |
 | `STREAM_SECRET` | random per process | HMAC secret for stream tokens. Required with more than one worker. |
 | `WEB_CONCURRENCY` | 1 | uvicorn workers |
 | `DB_POOL_MAX` | 20 | Database connections per worker |

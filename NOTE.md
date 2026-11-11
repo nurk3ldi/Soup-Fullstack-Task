@@ -1,6 +1,6 @@
 # Note: proofs, numbers, limits
 
-All numbers are copied from `results/test_output.txt` (100 passed) and `results/load.txt`.
+All numbers are copied from `results/test_output.txt` (106 passed) and `results/load.txt`.
 They vary a little per run; the committed files are the reference.
 
 ## 2. Consistency: page == database
@@ -86,19 +86,22 @@ A final test checks every run ever written to the test database (1836 runs, 570 
 114 621 batches, including load-test data): 0 runs with a `seq` gap or repeat, 0 ledger
 mismatches, 0 non-finite values. Mutation checks (code broken on purpose, a test must fail)
 were done by hand for the stream, isolation and E2E tests and are listed in `AI_USAGE.md`.
-The newest files (`test_hardening.py`, `test_security.py`, the lifetime tests) have not had them.
+The newest files (`test_hardening.py`, `test_security.py`, `test_ratelimit.py`, the lifetime
+tests) have not had them.
 
 **Known limits.** One API process only. The slow-client design differs from the spec (see
 DESIGN.md). In production the lifetime limit is 300 s, so a dead client can stay registered
-for up to 5 minutes. Revoking a project's last key locks the project out. There is no rate
-limiting and no TLS; both are left to a proxy in front.
+for up to 5 minutes. Revoking a project's last key locks the project out. Rate limits
+exist but only within one process; there is no TLS, which is left to a proxy in front.
 
 **Security review.** Done last, recorded in `SECURITY.md` with scanner output in
-`results/security/`. Ten findings, all fixed or mitigated: the API container ran as root (now
+`results/security/`. Eleven findings, all fixed or mitigated: the API container ran as root (now
 uid 10001, read-only filesystem, no capabilities); the port was published on all interfaces
 with public default credentials (now localhost only); no body size limit (now 413 above
 2 MiB: the 10 MB request went from 349 ms to 10 ms); no cap on open streams (now 100 per
-project, then 429); security headers missing on API responses. Scanners: gitleaks found no
+project, then 429); no rate limiting (now 600 requests/s per project, and 20 failed
+credentials per address, then 1 per second: 992 guesses sent in 3 s, 10 evaluated); security
+headers missing on API responses. Scanners: gitleaks found no
 real secret, pip-audit no known vulnerability, Trivy 0 CRITICAL and 47 HIGH in Debian system
 packages with no fix available.
 
@@ -108,33 +111,36 @@ One 8-core machine running the load generator, the API (1 process) and Postgres 
 
 | | batch = 10 (50 req/s) | batch = 1 (500 req/s target) |
 |---|---|---|
-| Achieved | 50.0 req/s, 500 points/s | **256.4 req/s** of 500 |
-| Ingest latency p50 / p95 / p99 | 9.0 / 13.9 / 23.0 ms | 167 / 376 / 535 ms |
-| Latency from scheduled send time, p50 | 10.4 ms | **31.3 s** (backlog grows for as long as the load lasts) |
-| SSE end-to-end lag p50 / p99 | 10.4 / 26.3 ms | 212 / 663 ms |
+| Achieved | 50.0 req/s, 500 points/s | **316.2 req/s** of 500 |
+| Ingest latency p50 / p95 / p99 | 8.6 / 9.8 / 11.0 ms | 141 / 283 / 377 ms |
+| Latency from scheduled send time, p50 | 9.9 ms | **17.7 s** (backlog grows for as long as the load lasts) |
+| SSE end-to-end lag p50 / p99 | 9.9 / 12.5 ms | 176 / 447 ms |
 | Errors, lost points, seq gaps | 0, 0, 0 | 0, 0, 0 |
-| CPU (100 % = one core) | API 24.9 %, DB 24.0 % | API 88.3 %, DB 114.1 % |
-| Peak memory | API 79 MiB (limit 512), DB 411 MiB | same |
+| CPU (100 % = one core) | API 23.5 %, DB 22.0 % | API 89.0 %, DB 114.5 % |
+| Peak memory | API 82 MiB (limit 512), DB 565 MiB | same |
 
-This is the final code, hardened container included. Earlier runs of batch = 1 on the same
-machine: 309.8 req/s on 2026-11-10 (before the fixes of the last day; the file is in git
-history), 277–281 req/s on 2026-11-11 before the security hardening. Each figure is a single
-run and the test database grew between them, so how much of the drop is code and how much is
-the machine was not isolated. With 4 workers the older code reached 413.9 req/s
+This is the final code: hardened container and rate limits included (the limit of 600
+requests/s per project was never reached). Five single runs of batch = 1 on this machine over
+two days gave 309.8, 277, 281, 256.4 and 316.2 req/s; the lowest and the highest are both from
+the last afternoon, on nearly the same code, so the spread is the machine and not the changes.
+None of them reached 500. With 4 workers older code reached 413.9 req/s
 (`results/load_workers4.txt`, not re-measured). Bottlenecks in the order found: the single
 Python process (CPU), then Postgres commits, each of which carries a `NOTIFY` and queues on a
 global lock. Neither was changed.
 
 ### Verdict
 
-> **TODO (author):** SHIP / DON'T SHIP for 50 concurrent runs × 10 events/s, and what to
-> change first. Inputs: the table above; batch = 10 is sustained with 0 errors and p99 23.0 ms;
-> batch = 1 is not sustained (256.4 of 500 req/s) but loses nothing; single-process limit;
-> the open items in SECURITY.md (no rate limiting, no TLS, default credentials).
+**SHIP, with a condition.** If clients send points in batches of 10, the system carries this
+load easily: p99 latency 11 ms, no errors, and not one point lost in five load runs. If every
+point is sent on its own (500 requests/s), the server does not get past 256–316 requests/s
+and the backlog keeps growing. So the first thing I would change is to require clients to
+batch, and the second is to put a proxy with TLS in front.
 
 ## What surprised me / what still concerns me
 
-> **TODO (author):** one paragraph. Candidate facts: `set_offline` not cutting an open stream;
-> the page staying "connected" on a stalled connection; the server being unable to see a dead
-> client at low data rates; 401 vs 422 ordering in the framework; httpx collapsing as a load
-> generator at 500 req/s; a 2 s healthcheck costing 10–40 % CPU on an idle container.
+I did not expect the security review to find as many problems as it did in a system whose
+tests were all passing. The other surprise was that a passing test does not mean the thing
+was actually checked: tests should not be trusted too much, and have to be checked again and
+again. What still concerns me is that the whole system was written by AI, so a bug can still
+come from anywhere, including a place nobody thought of, and I am not fully confident in it.
+If real people used it, I think the first errors would show up in the metrics.

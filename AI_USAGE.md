@@ -126,7 +126,7 @@ Status is one of: accepted / changed / rejected / pending review.
 | Keep the pull-based slow-client design instead of the spec's 1000-message queue with `event: overflow`; explain the difference in DESIGN.md. | accepted | existing stalled-client test: dropped after 2.3 s, at most 500 points buffered |
 | Maximum stream lifetime (`SSE_MAX_LIFETIME_SECONDS`, default 300, +-10 % jitter) so that a dead client the server cannot detect is released; live clients resume from their cursor. | accepted | silent-stall E2E: `server_streams=1->1` (was `1->2`); never-reading client with 3 points released after 2.1 s with 0 overflow drops; new `max-lifetime` E2E scenario: 3 reconnects, 500 = 500 = 500 = 500 |
 | Leave batch=1 at 500 req/s unfixed and report it as measured. | accepted | `results/load.txt` |
-| README.md, DESIGN.md and NOTE.md drafted by AI from the measured output. Verdict and the surprises paragraph are left as TODO for the author. | pending review | numbers copied from `results/test_output.txt` and `results/load.txt` |
+| README.md, DESIGN.md and NOTE.md drafted by AI from the measured output. The verdict and the surprises paragraph are the author's: the author chose between two opposite sample verdicts offered by AI and dictated the paragraph in Kazakh; AI translated both into English. | pending review | numbers copied from `results/test_output.txt` and `results/load.txt` |
 
 ## Security review (2026-11-11)
 
@@ -151,3 +151,15 @@ check, not the findings.
 | Exact dependency versions; Debian security updates applied at image build. | pending review | pip-audit: no known vulnerabilities; Trivy: 49 → 47 HIGH, 0 fixable left, 0 CRITICAL |
 | **Not done, said so in SECURITY.md:** rate limiting (belongs in a proxy; an in-process limiter does not hold across workers), TLS, distroless base image, key expiry and scopes, pagination of the run list. | — | — |
 | **Mistakes by AI in this pass, caught before commit:** (1) the first "default rules" gitleaks run used an empty config and reported 0 findings; rerun correctly it reports 1 (the dev admin token in the README). (2) A new test asserted `accepted == 1` for a 1000-point batch; the test was wrong and was corrected. (3) A Trivy command that mounted the Docker socket into a third-party container was blocked by the tool's safety check; the scan was redone on a saved image with no socket. | — | `results/security/gitleaks.txt` section 1 |
+
+## Rate limiting (2026-11-11)
+
+Asked for by the author after the security review listed it as the first open item.
+
+| Suggestion by AI | Status | Verified how |
+|---|---|---|
+| Two in-process token-bucket limiters instead of one global one: per project (request rate) and per client address (failed credentials only). | pending review | `tests/test_ratelimit.py`, 6 tests |
+| The address limiter refuses *before* the credential is looked at, valid or not. The alternative (always let a valid credential through) would not limit guessing at all: a right guess would still get 200. Cost: a guesser can lock out everyone behind its address while it keeps going. | pending review | test: after 5 failures the valid key, the right admin token and a valid stream token all get 429; 992 guesses in 3 s, 10 evaluated |
+| Default of 600 requests/s per project, chosen to sit above the assignment's own workload (500 requests/s with batch size 1), so the load test still measures the server and not the limiter. It is above what one process can serve, which SECURITY.md says plainly. | pending review | load test rerun with the limiter on: 0 errors (`results/load.txt`) |
+| Limiters are switched off on the test service by environment and switched on per test through a TEST_MODE hook; a separate test checks that the normal service has them on by default. | pending review | `…plain_service_limits_failed_credentials_without_any_hook`: 40 bad keys → 20 × 401, 20 × 429 |
+| Not done: shared state across workers (would need Redis or a proxy), limits on unauthenticated endpoints, trusting `X-Forwarded-For`. | — | SECURITY.md, open item 1 |
