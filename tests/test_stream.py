@@ -209,7 +209,12 @@ async def test_kill_hook_drops_stream_and_last_event_id_resumes(client, make_pro
 async def test_debug_endpoints_do_not_exist_without_test_mode(plain_client, make_project, make_run):
     a = await make_project()
     run = await make_run(a)
-    for method, path in (("GET", "/debug/stats"), ("POST", f"/debug/kill-streams/{run['id']}")):
+    for method, path in (
+        ("GET", "/debug/stats"),
+        ("GET", "/debug/logs"),
+        ("POST", f"/debug/kill-streams/{run['id']}"),
+        ("POST", "/debug/stream-lifetime/1"),
+    ):
         for headers in ({}, a.headers):
             r = await plain_client.request(method, path, headers=headers)
             assert r.status_code == 404

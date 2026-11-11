@@ -68,6 +68,7 @@ async httpx script. Compose services: `db`, `api`, and `tests` (profile).
 docker compose up --build                 # app at http://localhost:8000
 docker compose run --rm tests             # full suite, inside docker
 pytest -v 2>&1 | tee results/test_output.txt   # raw output, committed under results/
+docker compose run --rm tests sh -c 'pytest -v -s 2>&1 | tee results/test_output.txt'
 sh loadtest/run.sh                        # both load variants, ~3.5 min → results/load.txt
 docker compose --profile tests up --build -d api api-test   # after changing app code
 ```
@@ -86,7 +87,8 @@ Update the checkboxes and the "State notes" below at the end of every working se
 - [x] 6. Isolation tests (7.2)
 - [x] 7. Consistency E2E (7.1, Playwright)
 - [x] 8. Load test (7.4) → `results/load.txt`
-- [ ] 9. Docs: README, DESIGN.md (1 page), NOTE.md (≤2 pages), AI_USAGE.md
+- [x] 9. Docs: README, DESIGN.md (1 page), NOTE.md (≤2 pages), AI_USAGE.md (drafted; the user
+      still writes the verdict and the surprises paragraph in NOTE.md)
 
 ### State notes
 
@@ -245,12 +247,10 @@ Update the checkboxes and the "State notes" below at the end of every working se
   10–40 % idle CPU in `docker stats` (healthchecks are now 30 s with a 1 s start interval,
   and CPU is taken from cgroup counters); connections opened in one burst all land on one
   uvicorn worker.
-- **RESUME HERE (paused 2026-11-11 ~01:30 +05).** Steps 1–8 done, 78 tests passing, nothing
-  committed to git yet. Next is step 9 (docs): README.md, DESIGN.md (1 page), NOTE.md
-  (≤2 pages, measured numbers, placeholders for the verdict and the surprises paragraph),
-  tidy AI_USAGE.md. Before or after that, ask the user about the three open decisions below.
-  Estimated deadline, if the 20 h started when SPEC.md was created (2026-11-10 20:13 +05):
-  about 2026-11-11 16:13 +05 — the user has not confirmed the real deadline.
+- **RESUME HERE (2026-11-11 afternoon).** Steps 1-9 done, 95 tests passing. Left for the
+  user: the verdict and the surprises paragraph in NOTE.md (both marked TODO), reviewing the
+  "pending review" rows in AI_USAGE.md, and the final commit + push. The real deadline was
+  never confirmed (estimate: 2026-11-11 16:13 +05).
 - On resume, first check the stack: `docker compose --profile tests ps`. If docker says
   permission denied, the user must log out/in (they are in the `docker` group now) or re-run
   the `setfacl` command. Then run the suite once before changing anything.
@@ -281,19 +281,20 @@ Update the checkboxes and the "State notes" below at the end of every working se
 
 ### Known failing tests / open problems
 
-- No failing tests (92 passed twice in a row, 2026-11-11 afternoon).
+- No failing tests (95 passed, 2026-11-11; `results/test_output.txt` is from that run).
 - Fixed 2026-11-11 with the user's approval: unauthenticated request + broken JSON body got
   422 instead of 401, because FastAPI decodes the body before dependencies run. Fix:
   `auth.AuthFirstRoute` (route class on all three routers) checks the admin token / key before
   the body is read and caches the principal on `request.state` (still one key query per
   request). New routers must use `route_class=AuthFirstRoute` or the bug comes back for them.
-- Open, waiting for the user's decision:
-  1. Slow-client design differs from SPEC §5 (pull + stall timeout instead of a 1000-message
-     queue with `event: overflow`). Keep or rewrite?
-  2. Server does not notice a silently dead SSE client at low data rates (zombie stream).
-     Suggested fix: maximum stream lifetime. Fix or document?
-  3. batch=1 at 500 req/s is not sustained. Fix (fewer round trips / NOTIFY outside the
-     ingest transaction / workers) or document in the verdict?
+- Decided by the user on 2026-11-11: (1) keep the pull-based slow-client design and explain it
+  in DESIGN.md; (2) zombie stream fixed with a maximum stream lifetime
+  (`SSE_MAX_LIFETIME_SECONDS`, default 300, +-10 % jitter; TEST_MODE hook
+  `POST /debug/stream-lifetime/{seconds}`, fixture `stream_lifetime`); (3) batch=1 at
+  500 req/s stays as measured, for the verdict.
+- Still open: no request body size limit; revoking the last key locks a project out; no
+  mutation checks for `test_hardening.py` and the lifetime tests; NOTE.md may be slightly over
+  2 printed pages; the verdict and surprises paragraph in NOTE.md are TODO for the user.
 
 ## Deliverables checklist
 

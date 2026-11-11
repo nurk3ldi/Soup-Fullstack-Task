@@ -8,6 +8,7 @@ an overflow; when it reconnects it resumes from its cursor and loses nothing.
 import asyncio
 import json
 import os
+import random
 from collections import defaultdict
 from typing import Annotated
 from uuid import UUID
@@ -30,12 +31,18 @@ AUTH_CHECK_SECONDS = 5.0  # fallback re-check of the key; revocation normally ar
 PING_SECONDS = float(os.environ.get("SSE_PING_SECONDS", "15"))
 STALL_SECONDS = float(os.environ.get("SSE_STALL_SECONDS", "10"))
 TOKEN_TTL_SECONDS = 60
+# No stream lives longer than this. A client that vanished without closing its socket cannot be
+# detected at low data rates (small writes keep succeeding into kernel buffers), so every stream
+# is ended after a while; a live client reconnects with its cursor and loses nothing.
+MAX_LIFETIME_SECONDS = float(os.environ.get("SSE_MAX_LIFETIME_SECONDS", "300"))
 
 
 class Stats:
     active_streams = 0
     sse_overflow_total = 0
     max_buffered_points = 0  # largest page any connection ever held
+    sse_recycled_total = 0  # streams ended by the server because they reached the maximum lifetime
+    max_lifetime_seconds = MAX_LIFETIME_SECONDS  # changed only by the TEST_MODE hook
 
 
 _tasks_by_run: dict[str, set[asyncio.Task]] = defaultdict(set)
@@ -129,6 +136,8 @@ class EventStream(Response):
             await self._write(send, f"retry: 1000\n\nevent: hello\ndata: {hello}\n\n".encode())
             auth_due = loop.time() + AUTH_CHECK_SECONDS  # the key was checked at connect
             ping_due = loop.time() + PING_SECONDS
+            # +-10 %, so that streams opened together do not all come back together.
+            recycle_due = loop.time() + Stats.max_lifetime_seconds * random.uniform(0.9, 1.1)
             while True:
                 sub.event.clear()  # anything arriving after this line re-arms the next round
 
@@ -148,11 +157,20 @@ class EventStream(Response):
                     if len(rows) == PAGE_SIZE:
                         continue  # more may be waiting; do not sleep
 
+                if loop.time() >= recycle_due:
+                    # Everything committed so far has been written (the read above came back
+                    # short), so the client's cursor is exact when it reconnects.
+                    Stats.sse_recycled_total += 1
+                    log.info("stream recycled", extra={"fields": {"run_id": str(self.run_id), "cursor": self.cursor}})
+                    return "complete"
+
                 if loop.time() >= ping_due:
                     await self._write(send, b"event: ping\ndata: {}\n\n")
                     ping_due = loop.time() + PING_SECONDS
 
-                timeout = max(0.0, min(POLL_SECONDS, auth_due - loop.time(), ping_due - loop.time()))
+                timeout = max(
+                    0.0, min(POLL_SECONDS, auth_due - loop.time(), ping_due - loop.time(), recycle_due - loop.time())
+                )
                 try:
                     await asyncio.wait_for(sub.event.wait(), timeout)
                 except asyncio.TimeoutError:
@@ -232,6 +250,8 @@ async def debug_stats(request: Request):
         "active_streams": Stats.active_streams,
         "sse_overflow_total": Stats.sse_overflow_total,
         "max_buffered_points": Stats.max_buffered_points,
+        "sse_recycled_total": Stats.sse_recycled_total,
+        "max_lifetime_seconds": Stats.max_lifetime_seconds,
         "page_size": PAGE_SIZE,
         "stall_seconds": STALL_SECONDS,
         "rss_kb": rss_kb,
@@ -247,3 +267,10 @@ async def debug_kill_streams(run_id: str):
     for task in tasks:
         task.cancel()
     return {"killed": len(tasks)}
+
+
+@debug_router.post("/debug/stream-lifetime/{seconds}")
+async def debug_stream_lifetime(seconds: float):
+    """Maximum lifetime for streams opened from now on; 0 restores the configured value."""
+    Stats.max_lifetime_seconds = seconds if seconds > 0 else MAX_LIFETIME_SECONDS
+    return {"max_lifetime_seconds": Stats.max_lifetime_seconds}

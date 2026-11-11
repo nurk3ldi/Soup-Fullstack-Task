@@ -5,7 +5,7 @@ configfile: pytest.ini
 testpaths: tests
 plugins: asyncio-1.4.1.post1, anyio-4.16.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
-collecting ... collected 92 items
+collecting ... collected 95 items
 
 tests/test_auth_runs.py::test_create_project_requires_admin_token PASSED
 tests/test_auth_runs.py::test_api_key_cannot_create_project PASSED
@@ -25,7 +25,10 @@ tests/test_consistency_e2e.py::test_e2e_network_down_mid_stream
 [e2e] scenario=network-down seed=101 batches_sent=53 points_sent=641 re_sent_batches=8 overlap_batches=5 late_batches=4 duplicate_responses=8 accepted_total=500 unique=500 db_rows=500 db_last_seq=500 page_rows=500 page_last_seq=500 dom_rows=500 api_rows=500 reconnects=1 stream_opens=[('since_seq', 0), ('last-event-id', 176)] ingest_seconds=10.4 window_page_seq=176->176 window_db_seq=183->389 window_statuses=reconnecting connections_cut=2 refused_during_window=4 recover_seconds=0.7
 PASSED
 tests/test_consistency_e2e.py::test_e2e_silent_stall_mid_stream 
-[e2e] scenario=silent-stall seed=404 batches_sent=51 points_sent=625 re_sent_batches=7 overlap_batches=5 late_batches=3 duplicate_responses=7 accepted_total=500 unique=500 db_rows=500 db_last_seq=500 page_rows=500 page_last_seq=500 dom_rows=500 api_rows=500 reconnects=1 stream_opens=[('since_seq', 0), ('since_seq', 179)] ingest_seconds=14.1 window_page_seq=179->179 window_db_seq=210->413 window_statuses=connected/reconnecting connections_frozen=2 recover_seconds=3.7 server_streams=1->2 server_overflow_drops=0
+[e2e] scenario=silent-stall seed=404 batches_sent=51 points_sent=625 re_sent_batches=7 overlap_batches=5 late_batches=3 duplicate_responses=7 accepted_total=500 unique=500 db_rows=500 db_last_seq=500 page_rows=500 page_last_seq=500 dom_rows=500 api_rows=500 reconnects=1 stream_opens=[('since_seq', 0), ('since_seq', 179)] ingest_seconds=14.1 window_page_seq=179->179 window_db_seq=210->413 window_statuses=connected/reconnecting connections_frozen=2 recover_seconds=3.7 server_streams=1->1 server_recycled=1 server_overflow_drops=0
+PASSED
+tests/test_consistency_e2e.py::test_e2e_streams_ended_by_max_lifetime_are_invisible_in_the_data 
+[e2e] scenario=max-lifetime seed=505 batches_sent=55 points_sent=648 re_sent_batches=8 overlap_batches=5 late_batches=4 duplicate_responses=8 accepted_total=500 unique=500 db_rows=500 db_last_seq=500 page_rows=500 page_last_seq=500 dom_rows=500 api_rows=500 reconnects=3 stream_opens=[('since_seq', 0), ('last-event-id', 176), ('last-event-id', 348)] ingest_seconds=10.4 server_recycled=2
 PASSED
 tests/test_consistency_e2e.py::test_e2e_server_kills_stream_and_browser_resumes_with_last_event_id 
 [e2e] scenario=kill seed=202 batches_sent=61 points_sent=633 re_sent_batches=9 overlap_batches=5 late_batches=4 duplicate_responses=9 accepted_total=500 unique=500 db_rows=500 db_last_seq=500 page_rows=500 page_last_seq=500 dom_rows=500 api_rows=500 reconnects=2 stream_opens=[('since_seq', 0), ('last-event-id', 139), ('last-event-id', 350)] ingest_seconds=11.3 streams_killed=[1, 1]
@@ -43,7 +46,7 @@ tests/test_hardening.py::test_malformed_input_is_a_clean_4xx_and_never_a_500
 [malformed] 36 cases, statuses: [400, 404, 405, 422]
 PASSED
 tests/test_hardening.py::test_oversized_body_is_rejected_and_stores_nothing 
-[body] 10.1 MB, 200000 points: status=422 in 345 ms
+[body] 10.1 MB, 200000 points: status=422 in 349 ms
 PASSED
 tests/test_hardening.py::test_values_survive_ingest_database_snapshot_and_stream_bit_for_bit PASSED
 tests/test_hardening.py::test_retry_that_differs_only_in_spelling_is_still_the_same_batch PASSED
@@ -56,7 +59,7 @@ tests/test_hardening.py::test_snapshot_is_self_consistent_while_writers_are_runn
 [snapshot] 49 snapshot reads during 40 concurrent batches, all self-consistent
 PASSED
 tests/test_hardening.py::test_invariants_hold_for_every_run_in_the_database 
-[invariants] projects=950 runs=983 points=227437 batches=4780 broken_seq_runs=0 ledger_mismatches=0 points_without_ledger_row=7 non_finite=0
+[invariants] projects=1136 runs=1371 points=409128 batches=71971 broken_seq_runs=0 ledger_mismatches=0 points_without_ledger_row=9 non_finite=0
 PASSED
 tests/test_ingest.py::test_ingest_assigns_gap_free_seq_in_name_step_order PASSED
 tests/test_ingest.py::test_overlapping_batch_first_write_wins_and_seq_has_no_gaps PASSED
@@ -77,25 +80,25 @@ tests/test_isolation.py::test_batch_id_of_another_project_is_not_an_oracle PASSE
 tests/test_isolation.py::test_stream_token_of_a_does_not_open_stream_of_b PASSED
 tests/test_isolation.py::test_open_stream_of_a_never_receives_events_of_b PASSED
 tests/test_isolation.py::test_ids_are_random_uuid4_and_neighbours_lead_nowhere 
-[ids] smallest numeric gap between consecutively created run ids: 2^118
+[ids] smallest numeric gap between consecutively created run ids: 2^123
 PASSED
 tests/test_isolation.py::test_responses_are_not_cacheable_and_same_url_differs_per_key PASSED
 tests/test_isolation.py::test_error_bodies_reveal_no_ids_prefixes_or_internals PASSED
 tests/test_isolation.py::test_logs_contain_neither_api_keys_nor_stream_tokens 
-[logs] scanned 5601 log lines (13 from this test); lines containing each secret: {'key A': 0, 'key B': 0, 'new key': 0, 'stream token': 0, 'stream token signature': 0, 'admin token': 0}
+[logs] scanned 2048 log lines (13 from this test); lines containing each secret: {'key A': 0, 'key B': 0, 'new key': 0, 'stream token': 0, 'stream token signature': 0, 'admin token': 0}
 PASSED
 tests/test_isolation.py::test_timing_foreign_run_vs_missing_run 
 [timing] GET /runs/<id> with A's key, 200 requests each, interleaved:
-[timing]   run of project B : median 5.524 ms, p95 6.954 ms
-[timing]   nonexistent run  : median 5.579 ms, p95 7.297 ms
-[timing]   own run (200)    : median 5.767 ms, p95 7.642 ms
-[timing]   median difference foreign - missing: -55.3 µs (stdev of 'missing': 744.1 µs)
+[timing]   run of project B : median 5.269 ms, p95 7.041 ms
+[timing]   nonexistent run  : median 5.195 ms, p95 6.447 ms
+[timing]   own run (200)    : median 5.384 ms, p95 7.314 ms
+[timing]   median difference foreign - missing: +74.2 µs (stdev of 'missing': 685.4 µs)
 PASSED
 tests/test_isolation.py::test_timing_unknown_key_vs_revoked_key 
 [timing] GET /runs with a bad key, 200 requests each, interleaved:
-[timing]   unknown key : median 4.168 ms
-[timing]   revoked key : median 4.251 ms
-[timing]   median difference revoked - unknown: +82.5 µs
+[timing]   unknown key : median 3.802 ms
+[timing]   revoked key : median 3.836 ms
+[timing]   median difference revoked - unknown: +33.1 µs
 PASSED
 tests/test_silent_failures.py::test_same_batch_five_times_concurrently_is_stored_once 
 [duplicates] 5 concurrent sends of one batch: fresh=1 duplicate=4 bodies=[{'accepted': 50, 'duplicates': 0, 'last_seq': 50}, {'duplicate': True, 'accepted': 50}, {'duplicate': True, 'accepted': 50}, {'duplicate': True, 'accepted': 50}, {'duplicate': True, 'accepted': 50}]
@@ -116,16 +119,22 @@ tests/test_silent_failures.py::test_repeated_drops_while_ingest_is_running_lose_
 [reconnect] 600 points ingested during 17 connections: received=600 unique=600 in_order=True
 PASSED
 tests/test_silent_failures.py::test_stalled_client_is_dropped_and_catches_up_on_reconnect 
-[overflow] stalled reader: ingested 20000 points; overflow counted after 2.3 s (stall timeout 2.0 s); sse_overflow_total 1 -> 2; active_streams 0 -> 0; max_buffered_points=500 (page_size 500); rss 71888 kB -> 71888 kB
+[overflow] stalled reader: ingested 20000 points; overflow counted after 2.3 s (stall timeout 2.0 s); sse_overflow_total 1 -> 2; active_streams 0 -> 0; max_buffered_points=500 (page_size 500); rss 67100 kB -> 67100 kB
 PASSED
 tests/test_silent_failures.py::test_rotation_kills_api_access_stream_and_token_of_old_key 
-[rotation] after revoke returned: old key rejected by API at +15.9 ms; open stream of old key closed at +16.9 ms (bound: 5000 ms fallback poll)
+[rotation] after revoke returned: old key rejected by API at +15.3 ms; open stream of old key closed at +16.5 ms (bound: 5000 ms fallback poll)
 PASSED
 tests/test_silent_failures.py::test_point_committed_without_notify_is_still_delivered_by_safety_poll 
 [fallback] point committed with no NOTIFY was delivered after 1.00 s (safety poll: 2 s)
 PASSED
 tests/test_silent_failures.py::test_key_revoked_without_notify_closes_stream_within_five_seconds 
 [fallback] key revoked with no NOTIFY: stream closed after 4.70 s (periodic check: 5 s)
+PASSED
+tests/test_silent_failures.py::test_stream_is_ended_at_max_lifetime_and_resume_loses_nothing 
+[lifetime] configured=2s lived=1.93s recycled=1
+PASSED
+tests/test_silent_failures.py::test_client_that_never_reads_is_released_at_max_lifetime_even_at_low_rate 
+[lifetime] never-reading client, 3 points: released after 2.1s (limit 2s), overflow_drops=0 recycled=1
 PASSED
 tests/test_smoke.py::test_healthz PASSED
 tests/test_smoke.py::test_schema_tables_and_keys PASSED
@@ -135,7 +144,7 @@ tests/test_stream.py::test_expired_stream_token_is_rejected PASSED
 tests/test_stream.py::test_token_ttl_header_is_ignored_without_test_mode PASSED
 tests/test_stream.py::test_token_for_one_run_does_not_open_another PASSED
 tests/test_stream.py::test_catch_up_then_live 
-[stream] live delivery (ingest request start → event received): 12.7 ms
+[stream] live delivery (ingest request start → event received): 12.8 ms
 PASSED
 tests/test_stream.py::test_concurrent_ingest_is_delivered_in_seq_order_exactly_once PASSED
 tests/test_stream.py::test_large_backlog_is_paged_completely PASSED
@@ -155,4 +164,4 @@ tests/test_ui.py::test_login_does_not_redirect_to_other_sites PASSED
 tests/test_ui.py::test_other_projects_run_page_shows_not_found_and_no_data PASSED
 tests/test_ui.py::test_open_run_page_stops_when_its_key_is_revoked PASSED
 
-======================== 92 passed in 115.64s (0:01:55) ========================
+======================== 95 passed in 131.30s (0:02:11) ========================

@@ -352,3 +352,79 @@ async def test_key_revoked_without_notify_closes_stream_within_five_seconds(clie
     print(f"\n[fallback] key revoked with no NOTIFY: stream closed after {waited:.2f} s (periodic check: 5 s)")
     assert ev["event"] == "revoked" and end is None
     assert waited <= 5.5
+
+
+# --- maximum stream lifetime (dead clients the server cannot see) ------------------------------
+
+
+async def test_stream_is_ended_at_max_lifetime_and_resume_loses_nothing(client, db, make_project, make_run, stream_lifetime):
+    a = await make_project()
+    run = await make_run(a)
+    await send_batch(client, a, run["id"], make_points(5))
+    before = await debug_stats(client)
+    await stream_lifetime(2)
+
+    t0 = time.perf_counter()
+    async with await open_stream(client, a, run["id"]) as s:
+        got = await s.metrics(5)
+        await send_batch(client, a, run["id"], make_points(5, start=5))  # arrives while open
+        got += await s.metrics(5)
+        async with asyncio.timeout(10):
+            assert await s.next_event() is None  # nothing more: the server ends the stream
+        lived = time.perf_counter() - t0
+        assert s.ended == "eof", "the stream must end cleanly, not be cut"
+    assert 1.7 <= lived <= 3.5, lived  # 2 s +-10 % jitter, plus scheduling slack
+
+    await send_batch(client, a, run["id"], make_points(5, start=10))  # arrives while nobody listens
+    async with await open_stream(client, a, run["id"], last_event_id=got[-1]["seq"]) as s:
+        got += await s.metrics(5)
+    assert [p["seq"] for p in got] == list(range(1, 16))
+    assert [(p["name"], p["step"], p["value"], p["seq"]) for p in got] == await db_points(db, run["id"])
+
+    after = await debug_stats(client)
+    print(f"\n[lifetime] configured=2s lived={lived:.2f}s recycled={after['sse_recycled_total'] - before['sse_recycled_total']}")
+    assert after["sse_recycled_total"] >= before["sse_recycled_total"] + 1
+
+
+async def test_client_that_never_reads_is_released_at_max_lifetime_even_at_low_rate(client, make_project, make_run, stream_lifetime):
+    """The gap left open by the stall timeout: a dead client at a low data rate never blocks a
+    write (a few events fit in the kernel buffers), so only the lifetime limit can release it."""
+    a = await make_project()
+    run = await make_run(a)
+    await send_batch(client, a, run["id"], make_points(3))
+    before = await debug_stats(client)
+    await stream_lifetime(2)
+    token = await stream_token(client, a, run["id"])
+
+    url = urlparse(API_URL)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(False)
+    loop = asyncio.get_running_loop()
+    await loop.sock_connect(sock, (socket.gethostbyname(url.hostname), url.port))
+    request = f"GET /runs/{run['id']}/stream?token={token} HTTP/1.1\r\nHost: {url.hostname}\r\n\r\n"
+    await loop.sock_sendall(sock, request.encode())
+    try:  # from here on the socket is never read and never closed
+        for _ in range(50):
+            if (await debug_stats(client))["active_streams"] == before["active_streams"] + 1:
+                break
+            await asyncio.sleep(0.1)
+        assert (await debug_stats(client))["active_streams"] == before["active_streams"] + 1
+
+        t0 = time.perf_counter()
+        stats = before
+        for _ in range(60):
+            stats = await debug_stats(client)
+            if stats["active_streams"] == before["active_streams"]:
+                break
+            await asyncio.sleep(0.1)
+        released = time.perf_counter() - t0
+        print(
+            f"\n[lifetime] never-reading client, 3 points: released after {released:.1f}s "
+            f"(limit 2s), overflow_drops={stats['sse_overflow_total'] - before['sse_overflow_total']} "
+            f"recycled={stats['sse_recycled_total'] - before['sse_recycled_total']}"
+        )
+        assert stats["active_streams"] == before["active_streams"], "dead stream is still registered"
+        assert stats["sse_overflow_total"] == before["sse_overflow_total"], "released by the stall timeout, not the lifetime"
+        assert stats["sse_recycled_total"] == before["sse_recycled_total"] + 1
+    finally:
+        sock.close()

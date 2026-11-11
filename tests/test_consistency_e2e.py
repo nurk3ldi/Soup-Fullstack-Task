@@ -242,6 +242,7 @@ async def silent_stall(*, page, client, db, proxy, run_id):
     return {**seen, "connections_frozen": frozen, "recover_seconds": recover,
             # Observations about the SERVER side of the dead connection (reported, not asserted):
             "server_streams": f"{before['active_streams']}->{after['active_streams']}",
+            "server_recycled": after["sse_recycled_total"] - before["sse_recycled_total"],
             "server_overflow_drops": after["sse_overflow_total"] - before["sse_overflow_total"]}
 
 
@@ -277,7 +278,8 @@ async def test_e2e_network_down_mid_stream(client, db, page, proxy, make_project
     assert all(cursor > 0 for _, cursor in s["stream_opens"][1:])
 
 
-async def test_e2e_silent_stall_mid_stream(client, db, page, proxy, make_project, make_run):
+async def test_e2e_silent_stall_mid_stream(client, db, page, proxy, make_project, make_run, stream_lifetime):
+    await stream_lifetime(5)  # production default is 300 s; see the end of this test
     s = await run_scenario(client, db, page, proxy, make_project, make_run, seed=404, label="silent-stall", disrupt=silent_stall)
     page_from, page_to = _window(s, "window_page_seq")
     db_from, db_to = _window(s, "window_db_seq")
@@ -288,11 +290,31 @@ async def test_e2e_silent_stall_mid_stream(client, db, page, proxy, make_project
     assert s["window_statuses"] == "connected/reconnecting", s["window_statuses"]
     assert s["reconnects"] >= 1 and len(s["stream_opens"]) >= 2
     assert all(cursor > 0 for _, cursor in s["stream_opens"][1:])
-    # NOT asserted, on purpose: that the server notices the dead stream. It does not, at this
-    # data rate. Its only signal is a write that blocks for SSE_STALL_SECONDS, and a few hundred
-    # small events fit in the kernel socket buffers, so writes keep "succeeding". The summary line
-    # reports server_streams (old stream still counted) and server_overflow_drops (0). The stream
-    # is only released when the buffers fill or TCP itself gives up. See NOTE.md.
+    # The server cannot notice the dead stream by itself at this data rate: its only signal is a
+    # write that blocks for SSE_STALL_SECONDS, and a few hundred small events fit in the kernel
+    # socket buffers, so writes keep "succeeding" (server_overflow_drops stays 0). Before the
+    # maximum stream lifetime existed this test reported server_streams=1->2: the dead stream
+    # stayed registered. Now it is ended when its lifetime runs out.
+    streams_before, streams_after = _window(s, "server_streams")
+    assert s["server_overflow_drops"] == 0
+    assert s["server_recycled"] >= 1
+    assert streams_after <= streams_before, "the dead stream is still registered on the server"
+
+
+async def recycled_by_server(*, page, client, db, proxy, run_id):
+    """Nothing is broken: the server itself ends every stream after 3 s (maximum lifetime)."""
+    before = await debug_stats(client)
+    await asyncio.sleep(9.0)
+    after = await debug_stats(client)
+    return {"server_recycled": after["sse_recycled_total"] - before["sse_recycled_total"]}
+
+
+async def test_e2e_streams_ended_by_max_lifetime_are_invisible_in_the_data(client, db, page, proxy, make_project, make_run, stream_lifetime):
+    await stream_lifetime(3)
+    s = await run_scenario(client, db, page, proxy, make_project, make_run, seed=505, label="max-lifetime", disrupt=recycled_by_server)
+    assert s["server_recycled"] >= 2
+    assert s["reconnects"] >= 2 and len(s["stream_opens"]) >= 3
+    assert all(cursor > 0 for _, cursor in s["stream_opens"][1:])
 
 
 async def test_e2e_server_kills_stream_and_browser_resumes_with_last_event_id(client, db, page, proxy, make_project, make_run):

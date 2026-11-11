@@ -182,6 +182,20 @@ async def debug_stats(client) -> dict:
     return r.json()
 
 
+@pytest.fixture
+async def stream_lifetime(client):
+    """Set the server's maximum stream lifetime (TEST_MODE hook); restored after the test."""
+
+    async def _set(seconds: float) -> None:
+        r = await client.post(f"/debug/stream-lifetime/{seconds}")
+        assert r.status_code == 200, r.text
+
+    try:
+        yield _set
+    finally:
+        await client.post("/debug/stream-lifetime/0")
+
+
 # --- browser ---------------------------------------------------------------------------------
 
 

@@ -118,3 +118,12 @@ Status is one of: accepted / changed / rejected / pending review.
 | **Flaky test fixed (test, not app):** `test_other_projects_run_page_shows_not_found_and_no_data` read the DOM right after `window.__state.status` changed, but the page renders up to 50 ms later (debounce). It now waits for the badge. The assertion itself is unchanged. | pending review | failed 1 of 2 full runs before; 0 of 8 UI-file runs and 0 of 5 full runs after |
 | `loadtest/run.sh` had container names hard-coded (`soup-api-1`), which only exist if the directory is called `soup`. It now looks the containers up with `docker compose ps -q`. | pending review | script ran end to end in a directory with another name |
 | Not done: mutation checks for the new test file (except the 401 test, which was seen failing against the unfixed app). `results/load.txt` was not regenerated: today's runs were ~10 % slower than the committed ones with and without the fix, so the difference is the machine, not the code. | — | — |
+
+## Open decisions closed, and docs (2026-11-11)
+
+| Suggestion by AI | Status | Verified how |
+|---|---|---|
+| Keep the pull-based slow-client design instead of the spec's 1000-message queue with `event: overflow`; explain the difference in DESIGN.md. | accepted | existing stalled-client test: dropped after 2.3 s, at most 500 points buffered |
+| Maximum stream lifetime (`SSE_MAX_LIFETIME_SECONDS`, default 300, +-10 % jitter) so that a dead client the server cannot detect is released; live clients resume from their cursor. | accepted | silent-stall E2E: `server_streams=1->1` (was `1->2`); never-reading client with 3 points released after 2.1 s with 0 overflow drops; new `max-lifetime` E2E scenario: 3 reconnects, 500 = 500 = 500 = 500 |
+| Leave batch=1 at 500 req/s unfixed and report it as measured. | accepted | `results/load.txt` |
+| README.md, DESIGN.md and NOTE.md drafted by AI from the measured output. Verdict and the surprises paragraph are left as TODO for the author. | pending review | numbers copied from `results/test_output.txt` and `results/load.txt` |
