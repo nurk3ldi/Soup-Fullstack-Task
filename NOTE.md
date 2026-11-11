@@ -17,18 +17,19 @@ snapshot, `window.__state`, and the DOM table.
 | expired-token | killed after token expiry | 2 | `since_seq` 105, 382 | 500 |
 | max-lifetime | streams ended after 3 s | 3 | `Last-Event-ID` 176, 348 | 500 |
 
-In the network-down window the database went from seq 183 to 389 while the page stayed at 176,
-then caught up in 0.7 s. Every scenario ends with `seq` exactly 1…500.
+Every scenario ends with `seq` exactly 1…500.
 
 **Found by the test.** (1) Playwright's `set_offline(True)` does not cut an open SSE response
 (20 of 20 points delivered "offline"), so the browser goes through a fault-injecting TCP proxy.
 (2) On a silent stall the page stayed "connected" forever; it now reconnects after 3 missed
 heartbeats.
 
-**Not caught; known limits.** One browser tab. One API process:
-`LISTEN/NOTIFY` across replicas is untested; every limit is per process. Runs of 500 points only. Steps above 2⁵³ lose precision in JavaScript. Faults are
-TCP-level on one host: no packet loss, buffering proxy or database crash. The slow-client design differs from the spec (DESIGN.md). In production a dead client
-stays registered up to 300 s. Revoking a project's last key locks it out. No TLS.
+**Not caught; known limits.** One browser tab. One API process: `LISTEN/NOTIFY` across
+replicas is untested; every limit is per process. Runs of 500 points only. Steps above 2⁵³
+lose precision in JavaScript. Faults are TCP-level on one host: no packet loss, buffering
+proxy or database crash. The slow-client design differs from the spec (DESIGN.md). In
+production a dead client stays registered up to 300 s. Revoking a project's last key locks it
+out. No TLS.
 
 ## 3. Isolation: A cannot reach B
 
@@ -79,14 +80,13 @@ Everything on one 8-core machine; 1 API process.
 | CPU (100 % = one core) | API 23.5 %, DB 22.0 % | API 89.0 %, DB 114.5 % |
 
 Five batch = 1 runs ranged 256–316 req/s (see `results/`); none reached 500. Four workers,
-older code: 413.9 req/s. Bottlenecks: the Python process, then Postgres commits
-(each carries a `NOTIFY`).
+older code: 413.9 req/s.
 
 ## Questions we expected in the live discussion
 
 - **Client offline 30 s.** The badge shows "reconnecting" and the page keeps what it had
-  (176 while the database reached 389). On reconnect `Last-Event-ID` makes the server read
-  `seq > 176` from the database; caught up in 0.7 s.
+  (network-down scenario: 176 while the database went from 183 to 389). On reconnect
+  `Last-Event-ID` makes the server read `seq > 176` from the database; caught up in 0.7 s.
 - **Weakest point.** One API process; `NOTIFY` serialized on a global lock at commit;
   `LISTEN/NOTIFY` across replicas untested.
 - **Noticing a lost event in production.** Today we would not: the page does not check for
@@ -96,14 +96,21 @@ older code: 413.9 req/s. Bottlenecks: the Python process, then Postgres commits
 
 ### Verdict
 
-<!-- NURKELDI WRITES THIS -->
-
-- batch = 10: 50.0 req/s sustained, p99 11.0 ms, 0 errors, 0 lost, API CPU 23.5 %.
-- batch = 1: 316.2 of 500 req/s, p50 from schedule 17.7 s and growing, 0 errors, 0 lost.
+**SHIP, if clients batch.** If clients send points in batches of 10, the system carries this
+load easily: p99 latency 11.0 ms, no errors, and not one point lost. If every point is sent on
+its own (500 requests/s), the server does not get past 256–316 requests/s and the backlog keeps
+growing (17.7 s behind at p50), although still no point is lost. So the first thing I would
+change is to require clients to batch (make it the SDK default), and the second is to run
+several API workers behind a proxy with TLS.
 
 ## What surprised me / what still concerns me
 
-<!-- NURKELDI WRITES THIS -->
-
-- No mutation checks: `test_hardening.py`, `test_security.py`, `test_ratelimit.py`, lifetime tests.
-- Multi-replica `NOTIFY` untested; `set_offline` and the 422-before-401 bug (above).
+I did not expect the security review to find as many problems as it did (eleven) in a
+system whose tests were all passing. The other surprise was that a passing test does not
+mean the thing was actually checked: `set_offline`, the method the spec suggested, never
+cut the stream, so that test would have passed while checking nothing. Tests should not be
+trusted too much, and have to be checked again and again. What still concerns me is that
+the whole system was written by AI, so a bug can still come from anywhere, including a place
+nobody thought of, and I am not fully confident in it. The newest tests have not been
+broken on purpose yet, and several API processes have never been tested together. If real
+people used it, I think the first errors would show up in the metrics.

@@ -93,8 +93,8 @@ Update the checkboxes and the "State notes" below at the end of every working se
 - [x] 6. Isolation tests (7.2)
 - [x] 7. Consistency E2E (7.1, Playwright)
 - [x] 8. Load test (7.4) → `results/load.txt`
-- [x] 9. Docs: README, DESIGN.md (1 page), NOTE.md (≤2 pages), AI_USAGE.md (drafted; the user
-      still writes the verdict and the surprises paragraph in NOTE.md)
+- [x] 9. Docs: README, DESIGN.md (1 page), NOTE.md (≤2 pages), AI_USAGE.md (verdict and
+      surprises paragraph written by the user)
 
 ### State notes
 
@@ -328,11 +328,10 @@ Update the checkboxes and the "State notes" below at the end of every working se
   selectors untouched. Suite rerun on it: 106 passed; `results/test_output.txt` was kept at the
   committed run because NOTE.md quotes it. Screenshots regenerated. Keep the stylesheet free of
   `text-transform` (tests read text off the page) and of external assets (CSP).
-- 2026-11-11 (late): NOTE.md cut from 1760 to 997 words on the user's instruction and its
-  per-run numbers re-synced to the committed `results/test_output.txt` (106-test run; the old
-  text quoted the 100-test run). The verdict and the surprises paragraph were replaced by
-  `<!-- NURKELDI WRITES THIS -->` placeholders with number notes: the user writes them. Their
-  earlier text is in `git show bfb3995:NOTE.md`. Do not fill the placeholders.
+- 2026-11-11 (late): NOTE.md and DESIGN.md shortened to the brief's limits (2 pages, 1 page)
+  and NOTE.md's per-run numbers re-synced to the committed `results/test_output.txt` (106-test
+  run). The verdict and the surprises paragraph in NOTE.md are the user's own text (rewritten
+  by them that evening): do not edit them.
 - Project skills: 10 third-party skills in `.claude/skills/` (git-ignored; source and commit in
   AI_USAGE.md). They are generic checklists. Do not run their `scripts/` (not installed, not
   reviewed) and do not install the other 808.
