@@ -8,7 +8,7 @@ from pydantic import BaseModel, StringConstraints
 from app import auth
 from app.errors import not_found
 
-router = APIRouter()
+router = APIRouter(route_class=auth.AuthFirstRoute)
 
 # No control characters: Postgres text cannot hold NUL, and that must be a 422, not a 500.
 Name = Annotated[

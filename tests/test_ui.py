@@ -121,6 +121,9 @@ async def test_other_projects_run_page_shows_not_found_and_no_data(client, page,
     await page.wait_for_selector("#runs-section:not([hidden])")
     await page.goto(f"{API_URL}/runs/{rb['id']}/view")
     await wait_js(page, "window.__state && window.__state.status === 'not_found'")
+    # The page draws up to 50 ms after its state changes (render is debounced), so wait for the
+    # badge itself before reading text off the screen.
+    await page.wait_for_selector('#status[data-status="not_found"]')
     state = await page.evaluate("window.__state")
     assert state["points"] == [] and state["last_seq"] == 0
     body = await page.inner_text("body")
@@ -130,6 +133,7 @@ async def test_other_projects_run_page_shows_not_found_and_no_data(client, page,
     # Exactly the same page as for an id that does not exist at all.
     await page.goto(f"{API_URL}/runs/{uuid.uuid4()}/view")
     await wait_js(page, "window.__state && window.__state.status === 'not_found'")
+    await page.wait_for_selector('#status[data-status="not_found"]')
     assert await page.inner_text("body") == body
 
 

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import Request
+from fastapi.routing import APIRoute
 
 from app.errors import unauthorized
 
@@ -36,6 +37,9 @@ def _bearer(request: Request) -> str:
 async def require_key(request: Request) -> Principal:
     """Resolve the API key to its project. Missing, malformed, unknown and revoked keys all take
     the same path: one hash, one query, the same 401."""
+    cached = getattr(request.state, "principal", None)
+    if cached is not None:  # already resolved for this request by AuthFirstRoute
+        return cached
     row = await request.app.state.pool.fetchrow(
         "SELECT id, project_id FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL",
         hash_key(_bearer(request)),
@@ -43,7 +47,8 @@ async def require_key(request: Request) -> Principal:
     if row is None:
         raise unauthorized()
     request.state.project_id = str(row["project_id"])
-    return Principal(project_id=row["project_id"], key_id=row["id"])
+    request.state.principal = Principal(project_id=row["project_id"], key_id=row["id"])
+    return request.state.principal
 
 
 async def require_admin(request: Request) -> None:
@@ -51,6 +56,30 @@ async def require_admin(request: Request) -> None:
     # Fail closed: with no ADMIN_TOKEN configured nobody can create projects.
     if not expected or not hmac.compare_digest(_bearer(request).encode(), expected.encode()):
         raise unauthorized()
+
+
+def _depends_on(dependant, call) -> bool:
+    return any(d.call is call or _depends_on(d, call) for d in dependant.dependencies)
+
+
+class AuthFirstRoute(APIRoute):
+    """Checks the credential before FastAPI touches the request body.
+
+    FastAPI reads and JSON-decodes the body before it runs dependencies, so without this a caller
+    with no key and a broken body got 422 instead of 401, and unauthenticated input reached the
+    parser. The dependencies still run afterwards; require_key reuses the cached principal.
+    """
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+        checks = [c for c in (require_admin, require_key) if _depends_on(self.dependant, c)]
+
+        async def auth_first(request: Request):
+            for check in checks:
+                await check(request)
+            return await handler(request)
+
+        return auth_first
 
 
 async def key_is_active(pool, key_id: UUID) -> bool:

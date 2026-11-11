@@ -13,10 +13,11 @@ from fastapi import APIRouter, Query, Request
 from pydantic import AwareDatetime, BaseModel, BeforeValidator, Field, StringConstraints
 
 from app import config
+from app.auth import AuthFirstRoute
 from app.errors import ApiError, not_found
 from app.routes import Caller, parse_id
 
-router = APIRouter()
+router = APIRouter(route_class=AuthFirstRoute)
 
 MAX_POINTS = 1000
 NOTIFY_CHANNEL = "run_events"

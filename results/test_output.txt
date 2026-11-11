@@ -1,25 +1,11 @@
- Container soup-api-test-1 Running 
- Container soup-api-1 Running 
- Container soup-db-1 Running 
- Container soup-db-1 Waiting 
- Container soup-db-1 Waiting 
- Container soup-db-1 Healthy 
- Container soup-db-1 Healthy 
- Container soup-api-test-1 Waiting 
- Container soup-api-1 Waiting 
- Container soup-api-test-1 Healthy 
- Container soup-api-1 Healthy 
- Container soup-tests-run-98beabd11fef Creating 
- Container soup-tests-run-98beabd11fef Created 
 ============================= test session starts ==============================
 platform linux -- Python 3.12.16, pytest-9.2.0, pluggy-1.7.0 -- /usr/local/bin/python3.12
-cachedir: .pytest_cache
 rootdir: /srv
 configfile: pytest.ini
 testpaths: tests
 plugins: asyncio-1.4.1.post1, anyio-4.16.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
-collecting ... collected 78 items
+collecting ... collected 92 items
 
 tests/test_auth_runs.py::test_create_project_requires_admin_token PASSED
 tests/test_auth_runs.py::test_api_key_cannot_create_project PASSED
@@ -50,6 +36,28 @@ PASSED
 tests/test_consistency_e2e.py::test_playwright_set_offline_does_not_interrupt_an_open_stream 
 [e2e] set_offline(True): new fetch blocked=True; open stream still delivered 20 of 20 points; page status=connected
 PASSED
+tests/test_hardening.py::test_unauthenticated_request_is_401_no_matter_what_else_is_wrong PASSED
+tests/test_hardening.py::test_credentials_are_accepted_only_in_the_authorization_header PASSED
+tests/test_hardening.py::test_no_cross_origin_access_is_granted PASSED
+tests/test_hardening.py::test_malformed_input_is_a_clean_4xx_and_never_a_500 
+[malformed] 36 cases, statuses: [400, 404, 405, 422]
+PASSED
+tests/test_hardening.py::test_oversized_body_is_rejected_and_stores_nothing 
+[body] 10.1 MB, 200000 points: status=422 in 345 ms
+PASSED
+tests/test_hardening.py::test_values_survive_ingest_database_snapshot_and_stream_bit_for_bit PASSED
+tests/test_hardening.py::test_retry_that_differs_only_in_spelling_is_still_the_same_batch PASSED
+tests/test_hardening.py::test_metric_names_are_opaque_exact_strings PASSED
+tests/test_hardening.py::test_other_spellings_of_an_id_never_reach_another_projects_run PASSED
+tests/test_hardening.py::test_racing_writers_of_the_same_keys_leave_one_whole_batch PASSED
+tests/test_hardening.py::test_one_batch_id_racing_with_two_different_payloads PASSED
+tests/test_hardening.py::test_parallel_load_on_many_runs_of_two_projects_stays_separate PASSED
+tests/test_hardening.py::test_snapshot_is_self_consistent_while_writers_are_running 
+[snapshot] 49 snapshot reads during 40 concurrent batches, all self-consistent
+PASSED
+tests/test_hardening.py::test_invariants_hold_for_every_run_in_the_database 
+[invariants] projects=950 runs=983 points=227437 batches=4780 broken_seq_runs=0 ledger_mismatches=0 points_without_ledger_row=7 non_finite=0
+PASSED
 tests/test_ingest.py::test_ingest_assigns_gap_free_seq_in_name_step_order PASSED
 tests/test_ingest.py::test_overlapping_batch_first_write_wins_and_seq_has_no_gaps PASSED
 tests/test_ingest.py::test_duplicate_key_inside_one_batch_keeps_first_occurrence PASSED
@@ -69,25 +77,25 @@ tests/test_isolation.py::test_batch_id_of_another_project_is_not_an_oracle PASSE
 tests/test_isolation.py::test_stream_token_of_a_does_not_open_stream_of_b PASSED
 tests/test_isolation.py::test_open_stream_of_a_never_receives_events_of_b PASSED
 tests/test_isolation.py::test_ids_are_random_uuid4_and_neighbours_lead_nowhere 
-[ids] smallest numeric gap between consecutively created run ids: 2^123
+[ids] smallest numeric gap between consecutively created run ids: 2^118
 PASSED
 tests/test_isolation.py::test_responses_are_not_cacheable_and_same_url_differs_per_key PASSED
 tests/test_isolation.py::test_error_bodies_reveal_no_ids_prefixes_or_internals PASSED
 tests/test_isolation.py::test_logs_contain_neither_api_keys_nor_stream_tokens 
-[logs] scanned 742 log lines (13 from this test); lines containing each secret: {'key A': 0, 'key B': 0, 'new key': 0, 'stream token': 0, 'stream token signature': 0, 'admin token': 0}
+[logs] scanned 5601 log lines (13 from this test); lines containing each secret: {'key A': 0, 'key B': 0, 'new key': 0, 'stream token': 0, 'stream token signature': 0, 'admin token': 0}
 PASSED
 tests/test_isolation.py::test_timing_foreign_run_vs_missing_run 
 [timing] GET /runs/<id> with A's key, 200 requests each, interleaved:
-[timing]   run of project B : median 5.586 ms, p95 7.073 ms
-[timing]   nonexistent run  : median 5.443 ms, p95 7.024 ms
-[timing]   own run (200)    : median 5.663 ms, p95 7.537 ms
-[timing]   median difference foreign - missing: +143.1 µs (stdev of 'missing': 730.1 µs)
+[timing]   run of project B : median 5.524 ms, p95 6.954 ms
+[timing]   nonexistent run  : median 5.579 ms, p95 7.297 ms
+[timing]   own run (200)    : median 5.767 ms, p95 7.642 ms
+[timing]   median difference foreign - missing: -55.3 µs (stdev of 'missing': 744.1 µs)
 PASSED
 tests/test_isolation.py::test_timing_unknown_key_vs_revoked_key 
 [timing] GET /runs with a bad key, 200 requests each, interleaved:
-[timing]   unknown key : median 4.332 ms
-[timing]   revoked key : median 4.294 ms
-[timing]   median difference revoked - unknown: -37.5 µs
+[timing]   unknown key : median 4.168 ms
+[timing]   revoked key : median 4.251 ms
+[timing]   median difference revoked - unknown: +82.5 µs
 PASSED
 tests/test_silent_failures.py::test_same_batch_five_times_concurrently_is_stored_once 
 [duplicates] 5 concurrent sends of one batch: fresh=1 duplicate=4 bodies=[{'accepted': 50, 'duplicates': 0, 'last_seq': 50}, {'duplicate': True, 'accepted': 50}, {'duplicate': True, 'accepted': 50}, {'duplicate': True, 'accepted': 50}, {'duplicate': True, 'accepted': 50}]
@@ -108,10 +116,10 @@ tests/test_silent_failures.py::test_repeated_drops_while_ingest_is_running_lose_
 [reconnect] 600 points ingested during 17 connections: received=600 unique=600 in_order=True
 PASSED
 tests/test_silent_failures.py::test_stalled_client_is_dropped_and_catches_up_on_reconnect 
-[overflow] stalled reader: ingested 20000 points; overflow counted after 2.3 s (stall timeout 2.0 s); sse_overflow_total 0 -> 1; active_streams 0 -> 0; max_buffered_points=500 (page_size 500); rss 62532 kB -> 62928 kB
+[overflow] stalled reader: ingested 20000 points; overflow counted after 2.3 s (stall timeout 2.0 s); sse_overflow_total 1 -> 2; active_streams 0 -> 0; max_buffered_points=500 (page_size 500); rss 71888 kB -> 71888 kB
 PASSED
 tests/test_silent_failures.py::test_rotation_kills_api_access_stream_and_token_of_old_key 
-[rotation] after revoke returned: old key rejected by API at +16.6 ms; open stream of old key closed at +17.7 ms (bound: 5000 ms fallback poll)
+[rotation] after revoke returned: old key rejected by API at +15.9 ms; open stream of old key closed at +16.9 ms (bound: 5000 ms fallback poll)
 PASSED
 tests/test_silent_failures.py::test_point_committed_without_notify_is_still_delivered_by_safety_poll 
 [fallback] point committed with no NOTIFY was delivered after 1.00 s (safety poll: 2 s)
@@ -127,7 +135,7 @@ tests/test_stream.py::test_expired_stream_token_is_rejected PASSED
 tests/test_stream.py::test_token_ttl_header_is_ignored_without_test_mode PASSED
 tests/test_stream.py::test_token_for_one_run_does_not_open_another PASSED
 tests/test_stream.py::test_catch_up_then_live 
-[stream] live delivery (ingest request start → event received): 25.2 ms
+[stream] live delivery (ingest request start → event received): 12.7 ms
 PASSED
 tests/test_stream.py::test_concurrent_ingest_is_delivered_in_seq_order_exactly_once PASSED
 tests/test_stream.py::test_large_backlog_is_paged_completely PASSED
@@ -147,4 +155,4 @@ tests/test_ui.py::test_login_does_not_redirect_to_other_sites PASSED
 tests/test_ui.py::test_other_projects_run_page_shows_not_found_and_no_data PASSED
 tests/test_ui.py::test_open_run_page_stops_when_its_key_is_revoked PASSED
 
-======================== 78 passed in 109.64s (0:01:49) ========================
+======================== 92 passed in 115.64s (0:01:55) ========================

@@ -21,7 +21,7 @@ from app.ingest import point_out, read_after
 from app.logging import log
 from app.routes import Caller, parse_id
 
-router = APIRouter()
+router = APIRouter(route_class=auth.AuthFirstRoute)
 debug_router = APIRouter()
 
 PAGE_SIZE = 500  # points per read and per write; the per-connection memory bound

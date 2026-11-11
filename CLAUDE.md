@@ -256,10 +256,37 @@ Update the checkboxes and the "State notes" below at the end of every working se
   the `setfacl` command. Then run the suite once before changing anything.
 - The user tried the UI by hand on 2026-11-11 (project "demo", run "demo-run"); it worked.
   They hit a 404 by using a new project's key on an older project's run — expected.
+- 2026-11-11 (afternoon): hardening pass. New file `tests/test_hardening.py` (14 tests):
+  auth-before-everything matrix, credentials only in the Authorization header, no CORS,
+  36 malformed-input cases (never 5xx, error shape only), 10 MB body, bit-exact floats through
+  DB / snapshot / stream, equal-but-differently-spelled retries, opaque metric names, UUID
+  spellings, three race tests, snapshot consistency under writers, and SQL invariants over
+  every run in the database (`[invariants]` line). Suite: 92 tests. New mutation checks were
+  NOT done for this file (only the 401 test was seen failing against the unfixed app).
+- Fixed a flaky test, not the app: `test_other_projects_run_page_shows_not_found_and_no_data`
+  read the DOM right after `__state.status` flipped, but `app.js` renders up to 50 ms later
+  (debounce). It now waits for `#status[data-status="not_found"]`. Failed 1 of 2 runs before,
+  0 of 11 after. When reading text off the page, always wait on the DOM, not on `__state`.
+- Recorded behaviour (tests assert it): a UTF-16 JSON body is parsed like UTF-8; `{uuid}`,
+  `urn:uuid:`, upper-case and hyphen-less ids name the same run (`uuid.UUID()` accepts them)
+  and still go through the project filter; a 10 MB body is parsed fully before the 422
+  (~360 ms, there is still no body size limit).
+- `results/test_output.txt` regenerated: 92 passed. `results/load.txt` NOT regenerated: an A/B
+  load run on 2026-11-11 (without vs with the auth fix) gave batch=1 277 vs 281 req/s, both
+  ~10 % below the committed 310; the machine was slower that day, the fix made no difference.
+- `loadtest/run.sh` no longer hard-codes container names (they depend on the directory name;
+  the old `soup-api-1` names stopped existing when the directory was renamed).
+- The stack was down at the start of the day; `docker compose --profile tests up -d api api-test`
+  worked without permission problems.
 
 ### Known failing tests / open problems
 
-- No failing tests (78 passed, 2026-11-11).
+- No failing tests (92 passed twice in a row, 2026-11-11 afternoon).
+- Fixed 2026-11-11 with the user's approval: unauthenticated request + broken JSON body got
+  422 instead of 401, because FastAPI decodes the body before dependencies run. Fix:
+  `auth.AuthFirstRoute` (route class on all three routers) checks the admin token / key before
+  the body is read and caches the principal on `request.state` (still one key query per
+  request). New routers must use `route_class=AuthFirstRoute` or the bug comes back for them.
 - Open, waiting for the user's decision:
   1. Slow-client design differs from SPEC §5 (pull + stall timeout instead of a 1000-message
      queue with `event: overflow`). Keep or rewrite?
