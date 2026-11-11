@@ -328,6 +328,11 @@ Update the checkboxes and the "State notes" below at the end of every working se
   selectors untouched. Suite rerun on it: 106 passed; `results/test_output.txt` was kept at the
   committed run because NOTE.md quotes it. Screenshots regenerated. Keep the stylesheet free of
   `text-transform` (tests read text off the page) and of external assets (CSP).
+- 2026-11-11 (late): NOTE.md cut from 1760 to 997 words on the user's instruction and its
+  per-run numbers re-synced to the committed `results/test_output.txt` (106-test run; the old
+  text quoted the 100-test run). The verdict and the surprises paragraph were replaced by
+  `<!-- NURKELDI WRITES THIS -->` placeholders with number notes: the user writes them. Their
+  earlier text is in `git show bfb3995:NOTE.md`. Do not fill the placeholders.
 - Project skills: 10 third-party skills in `.claude/skills/` (git-ignored; source and commit in
   AI_USAGE.md). They are generic checklists. Do not run their `scripts/` (not installed, not
   reviewed) and do not install the other 808.

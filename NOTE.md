@@ -1,146 +1,109 @@
 # Note: proofs, numbers, limits
 
-All numbers are copied from `results/test_output.txt` (106 passed) and `results/load.txt`.
-They vary a little per run; the committed files are the reference.
+Numbers come from `results/test_output.txt` (106 passed) and `results/load.txt`.
 
 ## 2. Consistency: page == database
 
-`tests/test_consistency_e2e.py` drives a real headless Chromium against the real API. Each
-scenario sends 500 unique points in 3 metrics as 50–61 shuffled, concurrent batches: 7–9 are
-re-sent with the same `batch_id`, 5 overlap earlier batches with different values, 3–4 arrive
-late. Mid-stream the connection is disrupted. At the end **four views** must be equal: the
-database, the API snapshot, the page's `window.__state`, and the rendered table read back
-from the DOM.
+`tests/test_consistency_e2e.py` drives headless Chromium against the real API. Each scenario
+sends 500 unique points as 50–61 shuffled, concurrent batches (7–9 re-sent, 5 overlapping,
+3–4 late) and disrupts the connection mid-stream. Four views must end equal: database, API
+snapshot, `window.__state`, and the DOM table.
 
-| Scenario | Disruption | Reconnects | Resumed from | Result |
+| Scenario | Disruption | Reconnects | Resumed from | All four views |
 |---|---|---|---|---|
-| network-down | all connections reset, new ones refused 4 s | 1 | `Last-Event-ID` 176 | 500 = 500 = 500 = 500 |
-| silent-stall | connection frozen, no error ever delivered | 1 | `since_seq` 179 | 500 = 500 = 500 = 500 |
-| kill | server drops the stream twice | 2 | `Last-Event-ID` 139, 350 | 500 = 500 = 500 = 500 |
-| expired-token | stream killed after its token expired | 2 | `since_seq` 105, 382 | 500 = 500 = 500 = 500 |
-| max-lifetime | server ends every stream after 3 s | 3 | `Last-Event-ID` 176, 332 | 500 = 500 = 500 = 500 |
+| network-down | reset, refused 4 s | 1 | `Last-Event-ID` 176 | 500 |
+| silent-stall | frozen, no error | 1 | `since_seq` 179 | 500 |
+| kill | stream dropped twice | 2 | `Last-Event-ID` 139, 350 | 500 |
+| expired-token | killed after token expiry | 2 | `since_seq` 105, 382 | 500 |
+| max-lifetime | streams ended after 3 s | 3 | `Last-Event-ID` 176, 348 | 500 |
 
-During the network-down window the database went from seq 183 to 389 while the page stayed at
-176, then caught up in 0.7 s. In every scenario `seq` is exactly 1…500 and
-`accepted_total` = 500.
+In the network-down window the database went from seq 183 to 389 while the page stayed at 176,
+then caught up in 0.7 s. Every scenario ends with `seq` exactly 1…500.
 
-**Two things the test found.** (1) Playwright's `set_offline(True)`, the method the spec
-suggested, does not cut an open SSE response: the stream delivered 20 of 20 points while
-"offline". A test built on it would never have disconnected anything, so the browser goes
-through a small fault-injecting TCP proxy instead (`tests/netproxy.py`). (2) On a silently
-stalled connection the page stayed "connected" forever. Heartbeats are now real events and the
-page reconnects after 3 missed ones.
+**Found by the test.** (1) Playwright's `set_offline(True)` does not cut an open SSE response
+(20 of 20 points delivered "offline"), so the browser goes through a fault-injecting TCP proxy.
+(2) On a silent stall the page stayed "connected" forever; it now reconnects after 3 missed
+heartbeats.
 
-**What it does not catch.** One browser, one tab, one Chromium version. One API process:
-`LISTEN/NOTIFY` across replicas is untested. Runs of 500 points; the page renders every point
-as a DOM row and would be slow for very large runs. Steps above 2⁵³ lose precision in
-JavaScript. Faults are injected at TCP level by a proxy on the same host: no real packet loss,
-no buffering reverse proxy, no mobile network. No API or database crash mid-transaction (only
-an injected exception). Clock skew is irrelevant by design (ordering never uses clocks) but is
-also untested. Table correctness is checked, visual layout is not.
+**Not caught; known limits.** One browser tab. One API process:
+`LISTEN/NOTIFY` across replicas is untested; every limit is per process. Runs of 500 points only. Steps above 2⁵³ lose precision in JavaScript. Faults are
+TCP-level on one host: no packet loss, buffering proxy or database crash. The slow-client design differs from the spec (DESIGN.md). In production a dead client
+stays registered up to 300 s. Revoking a project's last key locks it out. No TLS.
 
 ## 3. Isolation: A cannot reach B
 
-`tests/test_isolation.py`, 12 tests. With A's key, every endpoint treats B's run exactly like a
-random UUID: same status, same body bytes, and B's row counts unchanged. A's stream token does
-not open B's stream; an open stream of A never receives B's events; a project id supplied by
-the client is ignored.
+`tests/test_isolation.py`, 12 tests. With A's key every endpoint treats B's run like a random
+UUID: same status, same bytes, B's rows unchanged.
 
-- **Guessing ids.** Run ids are UUIDv4; the smallest gap between consecutively created ids was
-  2¹²³. Other spellings of an id (`{…}`, `urn:uuid:`, upper case) reach the same run for its
-  owner and the same 404 for anyone else.
-- **Cache.** `Cache-Control: no-store, private` and `Vary: Authorization` on every response,
-  errors included; the same URL with key A then key B returns different data.
-- **Error messages.** Only `{"error":"<code>"}`. A regex check finds no UUIDs, key prefixes or
-  internals in the error bodies. 36 malformed requests all returned 4xx with that shape and
-  never a 500.
-- **Logs.** 4248 JSON log lines scanned for two API keys, a new key, a stream token, its
-  signature and the admin token: 0 lines contained any of them.
-- **Timing** (200 requests each, interleaved, measured inside the Docker network only).
-  Another project's run: median 6.459 ms. Nonexistent run: median 6.354 ms. Difference
-  +105 µs, against a request-to-request standard deviation of 999 µs. Unknown key vs revoked
-  key: 5.315 ms vs 5.268 ms, difference −47 µs. Both pairs run the same single query, so no
-  difference is expected; these numbers do not rule out one below the noise.
+- **Ids.** UUIDv4; smallest gap between consecutive ids: 2¹²².
+- **Errors.** Only `{"error":"<code>"}`; 36 malformed requests gave 4xx, never 500.
+- **Logs.** 6356 lines scanned for keys, tokens and the admin token: 0 hits.
+- **Timing** (200 requests each, inside the Docker network). Another project's run: median
+  5.323 ms; nonexistent run: 5.295 ms; difference +28.3 µs, standard deviation 515.6 µs.
+  Unknown vs revoked key: 3.952 vs 3.980 ms. A difference below the noise is not ruled out.
 
-**Bug found late.** A request with no valid key and a syntactically broken JSON body got 422
-instead of 401, because the framework parses the body before authentication. Nothing leaked,
-but unauthenticated input reached the parser. Fixed: the credential is checked first.
+**Bug found late, fixed.** No key plus broken JSON got 422, not 401.
 
 ## 4. Silent failures
 
-| Failure | How it was checked | Measured |
+| Failure | Check | Measured |
 |---|---|---|
-| Lost events on reconnect | Read to seq 40, disconnect, ingest 100, resume with `Last-Event-ID: 40` | received seq 41…140, no gaps |
-| | 600 points ingested across 17 forced reconnects | 600 received, 600 unique, in order |
-| Duplicates | Same batch sent 5 times concurrently | 1 fresh, 4 `duplicate:true`, stored once |
-| | Same `batch_id`, different body; 12-way race of two payloads | 409; exactly one payload stored |
-| Slow client | Client opens the stream and never reads; 20 000 points ingested | dropped after 2.4 s (limit 2.0 s in tests), at most 500 points buffered, RSS unchanged, full catch-up on reconnect |
+| Lost events | Disconnect at seq 40, ingest 100, resume | seq 41…140, no gaps |
+| | 600 points, 17 reconnects | 600 received, 600 unique, in order |
+| Duplicates | Same batch sent 5 times concurrently | 1 fresh, 4 `duplicate:true` |
+| Slow client | Never reads; 20 000 points | dropped after 2.3 s (limit 2.0 s), ≤ 500 buffered |
 | Partial writes | 999 valid points + 1 NaN | 422, 0 rows |
-| | Exception injected after 50 of 100 inserts | 500, 0 new rows, `last_seq` unchanged, retry stores all 100 |
-| Old key after rotation | Revoke, then use the old key and watch its open stream | API rejects at +32.4 ms, stream closed at +37.1 ms |
-| | Same, with the revoke notification suppressed | stream closed after 4.70 s (5 s fallback check) |
-| Lost notification | Point committed with no `NOTIFY` | delivered after 1.00 s (2 s safety poll) |
-| Dead client, low rate | Client never reads, 3 points only (stall timeout cannot fire) | released after 2.0 s by the lifetime limit (2 s in tests) |
+| | Exception after 50 of 100 inserts | 500, 0 new rows |
+| Old key | Revoke with a stream open | API rejects +15.5 ms, stream closed +17.2 ms |
+| | Same, no notification | closed after 4.70 s (5 s fallback) |
+| Lost notification | Point committed with no `NOTIFY` | delivered after 1.00 s (2 s poll) |
+| Dead client | Never reads, 3 points | released after 2.1 s (lifetime 2 s) |
 
-A final test checks every run ever written to the test database (1836 runs, 570 564 points,
-114 621 batches, including load-test data): 0 runs with a `seq` gap or repeat, 0 ledger
-mismatches, 0 non-finite values. Mutation checks (code broken on purpose, a test must fail)
-were done by hand for the stream, isolation and E2E tests and are listed in `AI_USAGE.md`.
-The newest files (`test_hardening.py`, `test_security.py`, `test_ratelimit.py`, the lifetime
-tests) have not had them.
+Whole test database (2096 runs, 636 054 points, 115 917 batches): 0 `seq` gaps or
+repeats, 0 ledger mismatches, 0 non-finite values.
 
-**Known limits.** One API process only. The slow-client design differs from the spec (see
-DESIGN.md). In production the lifetime limit is 300 s, so a dead client can stay registered
-for up to 5 minutes. Revoking a project's last key locks the project out. Rate limits
-exist but only within one process; there is no TLS, which is left to a proxy in front.
-
-**Security review.** Done last, recorded in `SECURITY.md` with scanner output in
-`results/security/`. Eleven findings, all fixed or mitigated: the API container ran as root (now
-uid 10001, read-only filesystem, no capabilities); the port was published on all interfaces
-with public default credentials (now localhost only); no body size limit (now 413 above
-2 MiB: the 10 MB request went from 349 ms to 10 ms); no cap on open streams (now 100 per
-project, then 429); no rate limiting (now 600 requests/s per project, and 20 failed
-credentials per address, then 1 per second: 992 guesses sent in 3 s, 10 evaluated); security
-headers missing on API responses. Scanners: gitleaks found no
-real secret, pip-audit no known vulnerability, Trivy 0 CRITICAL and 47 HIGH in Debian system
-packages with no fix available.
+**Security.** Eleven findings, all fixed or mitigated; Trivy reports 0 CRITICAL and 47 HIGH
+with no fix available. Details in `SECURITY.md`.
 
 ## 5. Load: 50 runs × 10 events/s, 60 s, 50 SSE subscribers
 
-One 8-core machine running the load generator, the API (1 process) and Postgres together.
+Everything on one 8-core machine; 1 API process.
 
 | | batch = 10 (50 req/s) | batch = 1 (500 req/s target) |
 |---|---|---|
-| Achieved | 50.0 req/s, 500 points/s | **316.2 req/s** of 500 |
-| Ingest latency p50 / p95 / p99 | 8.6 / 9.8 / 11.0 ms | 141 / 283 / 377 ms |
-| Latency from scheduled send time, p50 | 9.9 ms | **17.7 s** (backlog grows for as long as the load lasts) |
-| SSE end-to-end lag p50 / p99 | 9.9 / 12.5 ms | 176 / 447 ms |
+| Achieved | 50.0 req/s | **316.2 req/s** |
+| Ingest p50 / p95 / p99 | 8.6 / 9.8 / 11.0 ms | 141 / 283 / 377 ms |
+| From schedule, p50 | 9.9 ms | **17.7 s**, backlog grows |
+| SSE lag p50 / p99 | 9.9 / 12.5 ms | 176 / 447 ms |
 | Errors, lost points, seq gaps | 0, 0, 0 | 0, 0, 0 |
 | CPU (100 % = one core) | API 23.5 %, DB 22.0 % | API 89.0 %, DB 114.5 % |
-| Peak memory | API 82 MiB (limit 512), DB 565 MiB | same |
 
-This is the final code: hardened container and rate limits included (the limit of 600
-requests/s per project was never reached). Five single runs of batch = 1 on this machine over
-two days gave 309.8, 277, 281, 256.4 and 316.2 req/s; the lowest and the highest are both from
-the last afternoon, on nearly the same code, so the spread is the machine and not the changes.
-None of them reached 500. With 4 workers older code reached 413.9 req/s
-(`results/load_workers4.txt`, not re-measured). Bottlenecks in the order found: the single
-Python process (CPU), then Postgres commits, each of which carries a `NOTIFY` and queues on a
-global lock. Neither was changed.
+Five batch = 1 runs ranged 256–316 req/s (see `results/`); none reached 500. Four workers,
+older code: 413.9 req/s. Bottlenecks: the Python process, then Postgres commits
+(each carries a `NOTIFY`).
+
+## Questions we expected in the live discussion
+
+- **Client offline 30 s.** The badge shows "reconnecting" and the page keeps what it had
+  (176 while the database reached 389). On reconnect `Last-Event-ID` makes the server read
+  `seq > 176` from the database; caught up in 0.7 s.
+- **Weakest point.** One API process; `NOTIFY` serialized on a global lock at commit;
+  `LISTEN/NOTIFY` across replicas untested.
+- **Noticing a lost event in production.** Today we would not: the page does not check for
+  `seq` gaps and `sse_overflow_total` is exposed only with `TEST_MODE`. We would have the
+  client report gaps, export that counter, and run the existing seq-gap and ledger query
+  periodically.
 
 ### Verdict
 
-**SHIP, with a condition.** If clients send points in batches of 10, the system carries this
-load easily: p99 latency 11 ms, no errors, and not one point lost in five load runs. If every
-point is sent on its own (500 requests/s), the server does not get past 256–316 requests/s
-and the backlog keeps growing. So the first thing I would change is to require clients to
-batch, and the second is to put a proxy with TLS in front.
+<!-- NURKELDI WRITES THIS -->
+
+- batch = 10: 50.0 req/s sustained, p99 11.0 ms, 0 errors, 0 lost, API CPU 23.5 %.
+- batch = 1: 316.2 of 500 req/s, p50 from schedule 17.7 s and growing, 0 errors, 0 lost.
 
 ## What surprised me / what still concerns me
 
-I did not expect the security review to find as many problems as it did in a system whose
-tests were all passing. The other surprise was that a passing test does not mean the thing
-was actually checked: tests should not be trusted too much, and have to be checked again and
-again. What still concerns me is that the whole system was written by AI, so a bug can still
-come from anywhere, including a place nobody thought of, and I am not fully confident in it.
-If real people used it, I think the first errors would show up in the metrics.
+<!-- NURKELDI WRITES THIS -->
+
+- No mutation checks: `test_hardening.py`, `test_security.py`, `test_ratelimit.py`, lifetime tests.
+- Multi-replica `NOTIFY` untested; `set_offline` and the 422-before-401 bug (above).
